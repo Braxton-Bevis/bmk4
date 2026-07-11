@@ -4,10 +4,11 @@
 **Companion docs:** [PORT_JOURNAL.md](PORT_JOURNAL.md) (experiment log), [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) (API-by-API replacement table)
 
 One-sentence summary: **the iOS pipeline is fully proven (app builds, launches, renders
-Metal in CI), the build system retargets cleanly, and the engine's compile surface has
-been driven from "nothing compiles" down to four quantified, well-understood walls — with
-the D3D9 header layer of the TRANSLATION renderer path already demonstrated to absorb
-the engine's renderer includes on a real iOS SDK.**
+Metal in CI), the build system retargets cleanly, and eight compile-census rounds drove
+the engine from "nothing compiles" to the first real game-logic TU (`bg_pmove.cpp`,
+player movement) compiling clean for arm64-apple-ios — with the D3D9 header layer of the
+TRANSLATION renderer path demonstrated to absorb the engine's renderer includes on a
+real iOS SDK, and the remaining walls quantified in DEPENDENCY_MAP.md.**
 
 All work was done from a Windows laptop with **no local compiler of any kind**; every
 compile/launch claim below was verified on GitHub Actions macOS runners (Xcode 16.4,
@@ -93,7 +94,8 @@ iOS 18.5 SDK) with downloadable artifacts.
 | 4 | sse2neon vendored | SSE wall gone; DXVK stage: rb_backend passes `<d3d9.h>` ✅ |
 | 5 | threads.h/com_files gateway shims, forward-enum, assert variants | 8 TUs converge on the single `d3d9.h` wall; r_init clears all renderer headers in DXVK stage |
 | 6 | DXVK headers promoted to baseline; mss.h include gated; ODE malloc.h | ODE `vadefs.h` exposed (fixed round 7) |
-| 7 | ODE stdarg fix | see final census artifact (run in `ios-compile-census`) |
+| 7 | ODE stdarg fix | 10 TUs converge on ONE engine-internal C++ error: broken never-instantiated template (`ui_shared.h:1401`) — zero platform headers left in their error paths |
+| 8 | `-fdelayed-template-parsing` (MSVC template semantics) | **`bg_pmove.cpp` PASSES — first full engine TU compiling for arm64-apple-ios.** Remaining classes: zlib `Byte` typedef clash, `HWND__` tag absent from DXVK's windows_base.h (both shallow), plus the two by-design terminal walls (win32 layer / Miles) |
 
 Win32 regression: run 29169268868 (workflow_dispatch, Debug+Release full engine build)
 validates that all engine-source edits are invisible to MSVC — result recorded in the

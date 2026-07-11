@@ -243,6 +243,42 @@ semantics-preserving macros).
 - bg_pmove reached deps: `ode/common.h:29 'malloc.h' file not found` — classic Apple
   gap, fixed with `__APPLE__` gate (stdlib.h+alloca.h).
 
+## M2/M4 — Census rounds 6–8: first engine TU compiles (2026-07-11)
+
+**Round 6** (DXVK headers promoted to census baseline; snd_public.h's gratuitous mss.h
+include gated; `byte` typedef for standalone r_gfx.h; ODE malloc.h Apple gate): exposed
+`deps/ode/error.h:30 #include <vadefs.h>` — clang's MSVC-compat vadefs.h does
+`#include_next` into a Microsoft CRT that doesn't exist on iOS. Fixed with `_MSC_VER`
+gate → `<stdarg.h>`.
+
+**Round 7:** 10 of 13 engine TUs converged on a single error —
+`ui_shared.h:1401: use of undeclared identifier 'IsValidSeed'`. Inspection: a broken,
+never-instantiated template member (`KeywordHash_PickSeed` calls a function that exists
+nowhere; sibling `KeywordHash_IsValidSeed` even lacks a return). MSVC never parses
+uninstantiated template bodies; ISO clang does. **Significance: those 10 TUs had ZERO
+platform/dependency headers left in their error paths** — the frontier shifted from
+"missing Windows" to "MSVC-permissive C++ dialect."
+
+**Round 8** (`-fdelayed-template-parsing`, clang's MSVC template-semantics switch):
+
+> **`src/bgame/bg_pmove.cpp` — PASS.** The player-movement code of COD4 compiles clean
+> for `-target arm64-apple-ios15.0`. First full engine translation unit through, 8
+> rounds after 0/13.
+
+Remaining failure classes at experiment close (all characterized):
+- `deps/zlib/zconf.h:223 unknown type name 'Byte'` (3 TUs) — vendored-zlib typedef
+  interaction, shallow.
+- `r_init.h:76 unknown type name 'HWND__'` (5 TUs) — engine forward-references the
+  Win32 `HWND__` struct tag; DXVK's windows_base.h typedefs `HWND` without the tag.
+  One-line shim (`struct HWND__ { int unused; };`) or engine-side `#ifdef`, shallow.
+- `dinput.h` (3 TUs: win_main, win_common, phys_ode via win_local.h) — the win32
+  platform layer itself; terminal by design (gets REPLACED, not compiled, on iOS).
+- `mss.h` (snd_mss.cpp) — Miles Sound System; terminal by design (binary-only Win32
+  dep; AVAudioEngine shim scoped in DEPENDENCY_MAP §9).
+
+Census loop closed here deliberately: every remaining error is either shallow-mechanical
+or a scoped replace-subsystem item. Continuing rounds would be porting, not probing.
+
 **Decision (Objective 4):** DXVK native headers are now the *census baseline* — the
 TRANSLATION path is formally chosen. `scripts/platform/ios/platform.cmake` accepts
 `-DDXVK_NATIVE_INCLUDE=<dxvk>/include/native` for the CMake path; CI pins dxvk v2.7.1
