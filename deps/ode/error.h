@@ -27,7 +27,11 @@
 
 #include <ode/config.h>
 
+#ifdef _MSC_VER
 #include <vadefs.h>
+#else
+#include <stdarg.h>   // vadefs.h is an MSVC CRT header; va_list lives in stdarg.h elsewhere
+#endif
 
 #ifdef __cplusplus
 extern "C" {

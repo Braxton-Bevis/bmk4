@@ -214,3 +214,50 @@ build stays green (all engine-code edits are `#ifdef KISAK_IOS`-guarded or
 semantics-preserving macros).
 
 ---
+
+## M2/M4 — Census rounds 4–5: SSE cleared, D3D9 header wall PROVEN SOLVABLE (2026-07-11)
+
+**Round 4 (run 29169266083) results:**
+- **sse2neon works.** The xmmintrin wall is gone from all six affected TUs.
+- **DXVK stage headline:** `rb_backend.cpp` compiled *through* `<d3d9.h>` using DXVK's
+  mingw-directx submodule headers on arm64-apple-ios — first hard evidence the
+  TRANSLATION path absorbs the engine's D3D9 interface usage at source level. Its next
+  error was engine-internal (`unknown type name 'byte'` — include-order, r_gfx.h used
+  standalone), not a D3D9 gap.
+- New shallow strata: MSVC forward-enum decl (`enum team_t;` — exactly ONE in the tree,
+  fixed with `: __int32` matching game/teams.h:7), an assert variant
+  `static_assert((sizeof...)` the transform regex missed (2 sites), and the two gateway
+  headers: `qcommon/threads.h` (Windows.h for literally two typedefs — replaced with
+  `DWORD`/`HANDLE` typedefs on iOS) and `win32/win_local.h` (dinput.h; include gated
+  out of com_files.cpp for iOS).
+
+**Round 5 (run 29169370283) results — convergence:**
+- 8 of 13 engine TUs now funnel to a single wall: `'d3d9.h' file not found`
+  (rb_backend.h:3 and r_gfx.h:4 leak it engine-wide: cmd, threads, com_files, g_main_mp,
+  sv_main_mp, scr_vm, xmodel, phys_ode, r_init).
+- In the DXVK stage, `r_init.cpp` passed ALL renderer headers and died at Miles
+  (`mss.h`, pulled via snd_public.h:5 — which uses zero Miles types; include was
+  gratuitous at that layer, now gated). Note mss.h also collides with DXVK's
+  windows_base.h (`typedef void* LPSTR` vs `char*`) — Miles' Win32 entanglement is total;
+  stub/replace is the only route (already scoped in DEPENDENCY_MAP).
+- bg_pmove reached deps: `ode/common.h:29 'malloc.h' file not found` — classic Apple
+  gap, fixed with `__APPLE__` gate (stdlib.h+alloca.h).
+
+**Decision (Objective 4):** DXVK native headers are now the *census baseline* — the
+TRANSLATION path is formally chosen. `scripts/platform/ios/platform.cmake` accepts
+`-DDXVK_NATIVE_INCLUDE=<dxvk>/include/native` for the CMake path; CI pins dxvk v2.7.1
+(with the `--recurse-submodules=include/native/directx` lesson baked in).
+
+**Runtime plan for the translation stack (documented, NOT yet attempted):**
+engine d3d9 calls → DXVK d3d9 module built *native* for iOS → Vulkan → MoltenVK →
+CAMetalLayer (the stub app's layer, already proven on-device-class). Honest risk
+register: (1) DXVK has no official Apple support — community D3D9-on-MoltenVK forks
+exist for macOS, none for iOS; building libdxvk_d3d9 for arm64-apple-ios is
+unexplored territory (meson cross file + MoltenVK static lib + no-JIT constraints).
+(2) DXVK's WSI needs an iOS backend (SDL2-iOS or a small custom CAMetalLayer WSI).
+(3) `d3dx9shader.h` (r_material_load_obj.cpp) is NOT part of DXVK — D3DX shader
+compilation must be stubbed; COD4 fastfiles carry precompiled SM3 bytecode which DXVK
+consumes directly, so runtime HLSL compilation is avoidable. Item (1) is the next
+frontier past this experiment's horizon.
+
+---
