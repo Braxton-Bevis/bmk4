@@ -52,3 +52,43 @@ logged as a HUMAN-STEP, not attempted-and-faked.
 simulator-launched entirely in CI, is achievable in one milestone with zero engine code.
 
 ---
+
+## M1 — iOS pipeline: stub app builds, launches, renders (2026-07-11) ✅
+
+**Attempted:** Objective 1 — code-signed-shell pipeline: Xcode project, bundle ID,
+build, launch, Metal layer, all reproducible.
+
+**Concrete changes:**
+- `ios/project.yml` (XcodeGen spec, bundle ID `dev.braxton.kisakstub`, iOS 15.0 target)
+- `ios/Stub/{AppDelegate,MetalViewController}.swift`, `Shaders.metal` — scene-less UIKit
+  app, `CAMetalLayer`-backed view, `CADisplayLink` render loop, RGB triangle + animated
+  clear color; writes `Documents/metal_first_frame.txt` into its own sandbox after the
+  first presented frame.
+- `.github/workflows/ios-stub.yml` — two macOS-15 runner jobs (Xcode 16.4 / iOS 18.5 SDK).
+- Repo pushed to **private GitHub repo `Braxton-Bevis/kisakcod-ios-port`** (user approved;
+  needed a one-time `gh auth refresh -s workflow` device-flow for workflow-file push).
+
+**Compiled/Ran?** ✅ Run 29168700236, both jobs green on first attempt:
+- `simulator-launch-proof` (5m40s): built for iphonesimulator, booted an iPhone sim,
+  installed, launched. **Evidence pulled and inspected locally:** screenshot shows
+  triangle + HUD `GPU: Apple iOS simulator GPU  frame 2340`; two screenshots seconds
+  apart differ (live loop); in-sandbox marker file retrieved by CI
+  (`gpu=Apple iOS simulator GPU, drawableSize=(1206.0, 2622.0)`).
+- `device-ipa-unsigned` (24s): real-device binary, `lipo` → `Non-fat file ... architecture: arm64`,
+  linked `-target arm64-apple-ios15.0`. Artifact `KisakStub-unsigned.ipa` (33.6 KB).
+
+**Errors:** one pipeline stumble, not code: first `git push` rejected —
+`refusing to allow an OAuth App to create or update workflow ... without workflow scope`.
+Fix: `gh auth refresh -h github.com -s workflow` (documented for reproducibility).
+
+**Remaining HUMAN-STEP (not a blocker for the experiment):** physical-device launch =
+sign + install. Two documented paths in `ios/README.md`: Xcode automatic signing on the
+user's Mac (free Apple ID, 7-day profile) or Sideloadly on this Windows box with the CI
+IPA. Everything up to the signature is machine-verified.
+
+**Next hypothesis (M2):** the `-DKISAK_PLATFORM=ios` CMake graph configures cleanly on
+macOS, and a per-file clang census against the iOS SDK will show a portability gradient:
+game logic (bg_*, g_*) nearly clean; qcommon/universal failing on Win32 headers;
+win32/ and gfx_d3d/ failing catastrophically.
+
+---

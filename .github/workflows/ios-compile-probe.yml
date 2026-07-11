@@ -1,0 +1,62 @@
+name: iOS Engine Compile Probe
+
+# Measures the real arm64-apple-ios error surface of representative engine
+# translation units. This job is EXPECTED to report failures — its product is
+# the per-file error census artifact, not a green check. The separate
+# cmake-configure step proves the -DKISAK_PLATFORM=ios build graph is sound.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/ios-compile-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  compile-census:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: CMake configure with KISAK_PLATFORM=ios (must succeed)
+        run: |
+          set -euxo pipefail
+          cmake -B build-ios \
+            -DKISAK_PLATFORM=ios \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+
+      - name: Per-file compile census (failures expected and recorded)
+        run: |
+          set -uo pipefail
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          FILES=$(sed -n 's/^ *"\${SRC_DIR}\/\(.*\)".*$/src\/\1/p' scripts/ios/CMakeLists.txt)
+          mkdir -p census/logs
+          echo -e "file\tstatus\tfirst_error" > census/census.tsv
+          for f in $FILES; do
+            name=$(echo "$f" | tr '/' '_')
+            if xcrun clang++ -target arm64-apple-ios15.0 -isysroot "$SDK" \
+                 -std=gnu++20 -fsyntax-only -ferror-limit=25 \
+                 -fno-strict-aliasing -fwrapv -w \
+                 -DKISAK_MP -DKISAK_IOS -Isrc -Ideps \
+                 "$f" > "census/logs/$name.log" 2>&1; then
+              echo -e "$f\tPASS\t-" >> census/census.tsv
+            else
+              first=$(grep -m1 ' error: ' "census/logs/$name.log" | sed 's/\t/ /g' || true)
+              echo -e "$f\tFAIL\t${first:-unknown}" >> census/census.tsv
+            fi
+          done
+          echo '=== CENSUS ==='
+          column -t -s $'\t' census/census.tsv
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-compile-census
+          path: census/
+          retention-days: 14

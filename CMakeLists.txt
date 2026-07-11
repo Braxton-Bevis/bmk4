@@ -7,7 +7,10 @@ set(CMAKE_CXX_STANDARD 20)
 
 # Set this to match the folder name in scripts/platform
 # This will handle the path overrides if needed
-set(KISAK_PLATFORM win32)
+# Overridable from the command line: cmake -DKISAK_PLATFORM=ios ...
+if(NOT DEFINED KISAK_PLATFORM)
+    set(KISAK_PLATFORM win32)
+endif()
 
 # Set Address Sanitizer
 # NOTE: If you use this you will need to copy to the game's directory
@@ -34,7 +37,13 @@ include(${SCRIPTS_DIR}/platform_override.cmake)
 # Log out the KISAK_PLATFORM
 message("Building KISAK_PLATFORM: ${KISAK_PLATFORM}")
 
-# Include the subprojects
-add_subdirectory(${SCRIPTS_DIR}/mp)
-add_subdirectory(${SCRIPTS_DIR}/sp)
-add_subdirectory(${SCRIPTS_DIR}/dedi)
+# Include the subprojects.
+# The three shipping targets are still win32-only; the ios platform currently
+# builds a growing compile-probe target instead (see scripts/ios).
+if(KISAK_PLATFORM STREQUAL "ios")
+    add_subdirectory(${SCRIPTS_DIR}/ios)
+else()
+    add_subdirectory(${SCRIPTS_DIR}/mp)
+    add_subdirectory(${SCRIPTS_DIR}/sp)
+    add_subdirectory(${SCRIPTS_DIR}/dedi)
+endif()
