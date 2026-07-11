@@ -14,6 +14,7 @@ add_compile_options(
     -fno-strict-aliasing   # pervasive type-punning through pointer casts
     -fwrapv                # signed-overflow wrap assumed by decompiled arithmetic
     -fms-extensions        # MSVC-isms throughout the decomp: __declspec, __forceinline, __int32, anonymous structs
+    -fdelayed-template-parsing  # MSVC never parses uninstantiated template bodies; the decomp contains broken ones (ui_shared.h:1401)
     -w                     # first pass: collect hard errors only, warnings later
     -ferror-limit=25
 )
