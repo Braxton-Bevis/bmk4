@@ -522,3 +522,14 @@ fallback, CPUSTRING "ios-arm64", PreFetchCacheLine→__builtin_prefetch, and
 _time64→time. Known LP64 landmines on the hunk allocator flagged in-place
 (KISAKTODO(lp64): 32-bit pointer truncation in seven hunk functions, HunkUser
 pointer-in-int fields) — these gate actually CALLING Com_Init, not compiling it.
+
+## FF-prep - Fastfile attack plan written (2026-07-11, Windows seat)
+
+Stream 4 of docs/NEXT_SESSION.md fulfilled: docs/FASTFILE_PLAN.md (strategy: on-device
+load-time translation first, staged FF0-FF5 with house-rule gates; offline-repack
+promotion gated on FF5 perf data) + docs/fastfile-struct-catalog.md (251 assert sites
+cataloged; 45 pointer-bearing fastfile structs identified; full closure estimated
+~150-165 layouts). Produced by a 3-reader scoping fan-out (loader mechanics / struct
+catalog / community precedent incl. OpenAssetTools GPL-3.0 as adaptable, CoD4x AGPL as
+read-only reference). Both docs reviewed before commit.
+
