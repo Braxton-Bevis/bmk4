@@ -49,6 +49,11 @@ jobs:
               https://github.com/doitsujin/dxvk dxvk-headers
           test -f dxvk-headers/include/native/directx/d3d9.h
           test -f dxvk-headers/include/native/windows/windows_base.h
+          # Apply the canonical BMK4 iOS patch (M9): the runtime and the Mac's
+          # local census both compile against PATCHED headers — stock ones
+          # diverge (e.g. windows_base.h INT/BOOL typedefs collide in ObjC++
+          # TUs; caught as CI-vs-local drift on sys_ios_main.mm, run 29176446232).
+          git -C dxvk-headers apply --verbose "$GITHUB_WORKSPACE/scripts/platform/ios/dxvk-v2.7.1-ios.patch"
 
       - name: Per-file compile census (failures expected and recorded)
         run: |
