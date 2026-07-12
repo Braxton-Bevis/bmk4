@@ -69,3 +69,43 @@ simulator), and controller name + live stick values. The left stick moves the tr
 (physical controllers work identically via GCController), A switches the background
 palette, B recenters. The scene renders at 0.5× resolution and MetalFX spatial-upscales
 it to native when the GPU supports it (iOS 16+, `MTLFXSpatialScalerDescriptor.supportsDevice`).
+
+---
+
+## Verified physical-device flow (2026-07-11, iPad Pro 13" M5)
+
+The whole path below was exercised end-to-end from the command line — the only
+finger-on-device steps are Developer Mode and one trust tap.
+
+```bash
+# One-time device prep (on the iPad):
+#   1. Settings > Privacy & Security > Developer Mode -> on (reboots)
+#   2. After first install: Settings > General > VPN & Device Management
+#      -> trust the "Apple Development: <your appleid>" profile
+
+xcodegen generate
+xcrun devicectl list devices             # grab the device identifier
+
+# Build signed (automatic signing; first run mints your dev certificate):
+xcodebuild -project KisakStub.xcodeproj -scheme KisakStub -configuration Debug \
+  -destination 'platform=iOS,id=<DEVICE-ID>' -derivedDataPath build/dd \
+  -allowProvisioningUpdates build
+
+xcrun devicectl device install app --device <DEVICE-ID> \
+  build/dd/Build/Products/Debug-iphoneos/KisakStub.app
+xcrun devicectl device process launch --device <DEVICE-ID> dev.braxton.kisakstub
+
+# Pull the proof marker straight out of the app sandbox:
+xcrun devicectl device copy from --device <DEVICE-ID> \
+  --domain-type appDataContainer --domain-identifier dev.braxton.kisakstub \
+  --source Documents/metal_first_frame.txt --destination ./
+```
+
+Result on the M5 iPad: `metalfx=spatial 1600x1200 → 3200x2400` (the real
+MetalFX path — the simulator SDK doesn't ship the module), `fps=120.0`,
+`raytracing=supported`, and the engine smoke line from libkisaksmoke.a.
+
+**Wireless installs:** with iPadOS 17+, the CoreDevice pairing created over
+USB automatically serves a network tunnel (the `*.coredevice.local` hostname
+in `devicectl list devices`). Keep Mac + iPad on the same Wi-Fi, unplug, and
+the same `devicectl` commands keep working — no toggle needed.

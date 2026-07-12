@@ -1,146 +1,135 @@
-# FRONTIER REPORT — KisakCOD → arm64-apple-ios capability probe
+# FRONTIER REPORT — KisakCOD → arm64-apple-ios
 
-**Date:** 2026-07-11 · **Repo:** `Braxton-Bevis/kisakcod-ios-port` (private) ·
-**Companion docs:** [PORT_JOURNAL.md](PORT_JOURNAL.md) (experiment log), [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) (API-by-API replacement table)
+**Updated:** 2026-07-11 (Mac bring-up session) · **Repo:** `Braxton-Bevis/kisakcod-ios-port` ·
+**Companion docs:** [PORT_JOURNAL.md](PORT_JOURNAL.md) (experiment log, M0–M11), [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) (API-by-API replacement table)
 
-One-sentence summary: **the iOS pipeline is fully proven (app builds, launches, renders
-Metal in CI), the build system retargets cleanly, and eight compile-census rounds drove
-the engine from "nothing compiles" to the first real game-logic TU (`bg_pmove.cpp`,
-player movement) compiling clean for arm64-apple-ios — with the D3D9 header layer of the
-TRANSLATION renderer path demonstrated to absorb the engine's renderer includes on a
-real iOS SDK, and the remaining walls quantified in DEPENDENCY_MAP.md.**
+One-sentence summary: **every objective of the original capability probe is now
+green or beyond — all 23 tracked engine translation units compile clean for
+arm64-apple-ios, DXVK's d3d9 module (the renderer runtime, previously "the
+riskiest unknown in the whole port") builds as an arm64-apple-ios static
+library, and real engine code has been linked into the iOS app and executed
+with verified-correct results on both the simulator and a physical iPad Pro
+(M5) — with MetalFX spatial upscaling live at 120 fps.**
 
-All work was done from a Windows laptop with **no local compiler of any kind**; every
-compile/launch claim below was verified on GitHub Actions macOS runners (Xcode 16.4,
-iOS 18.5 SDK) with downloadable artifacts.
-
----
-
-## Furthest milestone reached, per objective
-
-### Objective 1 — iOS pipeline: ✅ COMPLETE (CI-verified; physical device = documented human step)
-- `ios/` contains an XcodeGen-defined, scene-less Swift app whose view is a `CAMetalLayer`;
-  it compiles a `.metal` shader library, presents at display refresh, and writes a
-  proof-of-run marker into its own sandbox `Documents/`.
-- CI (run 29168700236) **built it, booted an iOS Simulator, installed, launched, and
-  screenshotted it**: HUD showed `GPU: Apple iOS simulator GPU  frame 2340`; the marker
-  file was pulled out of the app container by `simctl get_app_container` as a hard job
-  assertion. Two screenshots seconds apart differ → live render loop, not a static frame.
-- The same CI run produced `KisakStub-unsigned.ipa`, verified `arm64` by `lipo` and
-  linked `-target arm64-apple-ios15.0`.
-- **Human last mile** (needs an Apple ID + physical iPhone, by design not fakeable from
-  CI): sign & install via Xcode on the Mac (7-day free profile) or Sideloadly on this
-  Windows machine. Step-by-step runbook: [ios/README.md](ios/README.md).
-
-### Objective 2 — Build-system port: ✅ RETARGETED + instrumented
-- `cmake -DKISAK_PLATFORM=ios -DCMAKE_SYSTEM_NAME=iOS` configures cleanly on macOS;
-  win32 keeps byte-identical flags. The ios platform gets clang flags
-  (`-fms-extensions -fno-strict-aliasing -fwrapv`) replacing `/MT /O2 ...`.
-- A CI **compile census** (`.github/workflows/ios-compile-probe.yml`) compiles 14
-  representative TUs against the real iOS SDK every push and publishes a per-file
-  error table — the port's instrument panel. Seven census rounds were run; each
-  documented in the journal with exact errors.
-- Dependency table delivered: [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) — 15 sections,
-  every Win32/D3D9/x86 API family → concrete iOS/POSIX replacement with effort rating,
-  built from an 11-agent source scan cross-checked against census data.
-
-### Objective 3 — Filesystem sandboxing: ✅ DESIGNED + LANDED (compile-verified shim)
-- Entire engine FS derives from two dvars set in one function (`FS_RegisterDvars`,
-  com_files.cpp): `fs_basepath` (reads) and `fs_homepath` (ALL writes). On iOS these now
-  root at the app bundle resource path and sandbox `Documents/` respectively via
-  `src/ios/sys_ios_paths.mm` — **the first engine-repo file to compile clean for
-  arm64-apple-ios** (census PASS, all rounds since).
-- The write path itself was proven behaviorally by the M1 stub (marker file in Documents).
-- Residual (mapped, not fixed): ~12 CWD-relative/hardcoded writes and ~15
-  backslash-path constructions (incl. the fastfile open path `"%s\\zone\\%s\\%s.ff"`) —
-  itemized with file:line in DEPENDENCY_MAP §6.
-
-### Objective 4 — Renderer (TRANSLATION path): ✅ HEADER LAYER PROVEN, runtime plan documented
-- Chosen route: engine D3D9 calls → DXVK (native) → Vulkan → MoltenVK → Metal, onto the
-  stub app's CAMetalLayer.
-- **Proven on real iOS SDK:** with DXVK v2.7.1's native headers (mingw-directx submodule),
-  `rb_backend.cpp` compiles through `<d3d9.h>`, and `r_init.cpp` clears ALL renderer
-  headers (dying later at Miles audio). The engine's D3D9 interface usage is
-  source-compatible with the translation layer's headers.
-- **Not attempted (next frontier):** building DXVK's d3d9 module as an arm64-apple-ios
-  library. No public precedent; risks are itemized in the journal (meson cross-build,
-  MoltenVK WSI, no official Apple support in DXVK).
-- `d3dx9shader.h` (runtime HLSL compile, 36 sites in one file) is NOT provided by DXVK —
-  but the engine already contains a parallel `shader_bin` precompiled-blob loader that
-  bypasses D3DX entirely (DEPENDENCY_MAP §8).
-
-### Objective 5 — Touch/controller input: ✅ FIRST PASS LANDED (stub-level, CI-verified)
-- `GCVirtualController` on-screen overlay (left thumbstick + A/B) IS the touch overlay,
-  and physical gamepads bind through the identical `GCController` path. CI marker proves
-  the connect (`controller=Apple Touch Controller`); the screenshot shows the overlay.
-  Stick moves the rendered triangle; buttons mutate render state.
-- Stub also gained **MetalFX spatial upscaling** (50/75% render scale → native, runtime
-  `supportsDevice` + compile-time `canImport` gates — the iphonesimulator SDK ships no
-  MetalFX module) and an in-app **GRAPHICS settings menu** (MetalFX toggle, render scale,
-  frame cap; UserDefaults-persisted) — the prototype for surfacing engine r_* dvars on iOS.
-- Engine-level input (feeding `Sys_QueEvent`) remains future work per DEPENDENCY_MAP §2.
-- Ray tracing: ruled out for the TRANSLATION path with evidence — MoltenVK implements no
-  VK_KHR_ray_tracing extensions; MetalFX's RT denoiser (MTL4FXTemporalDenoisedScaler,
-  iOS 26/Metal 4) presupposes a ray tracer; COD4 content is baked-lightmap with no RT hooks.
+The original probe (M0–M6) ran entirely from a Windows laptop against GitHub
+Actions runners. This session (M7–M11) reproduced everything on a real Mac
+(Xcode 26.6, iOS 26.5 SDK) and pushed each frontier past where the probe
+stopped. Every claim below is machine-verified: compile logs, an in-sandbox
+marker file pulled off the physical device, and CI runs.
 
 ---
 
-## The four walls (measured, ranked by depth)
+## Milestones, per objective
 
-| # | Wall | Size (measured) | Character |
-|---|---|---|---|
-| 1 | **32-bit layout assumption** | 249 `static_assert(sizeof...)` sites in 42 files; fastfile deserialization streams zone data into structs assuming 4-byte pointers; GSC VM value unions are 4-byte-pointer-shaped | The fundamental one. Relaxing asserts (done, `KISAK_LAYOUT_ASSERT`) lets code *compile*; making it *run* means load-time struct translation or offset-handle redesign for every serialized struct. Alternative worth studying: keep 32-bit offsets as handles (DEPENDENCY_MAP §12). |
-| 2 | **Win32 platform layer** | `src/win32`: 6,882 LOC / 19 files, ~60-function `win_local.h` contract; plus `threads.cpp` (~30 sites) and scattered Sys_* | Well-understood engine-port work: pthreads/UIKit/BSD-sockets replacements are enumerated per-family in DEPENDENCY_MAP §§2-7. No research risk, just volume. |
-| 3 | **Binary-only x86 DLLs** | Miles (mss32.dll + 8 codecs; 129 call sites / ~30 distinct AIL fns), Bink (binkw32.dll; 21 D3D9-glue calls), Steam (steam_api.dll) | Cannot exist on arm64-ios. Requires shims: AVAudioEngine behind the existing SND_/MSS_ wrappers, AVFoundation for cinematics, no-op Steam. |
-| 4 | **Inline x86 assembly** | 73 `__asm` occurrences in 20 files (cg_ents.cpp: 22) | Mechanical rewrites to C/NEON; sse2neon already absorbs the intrinsics-level SSE (proven in census round 4). |
+### Objective 1 — iOS pipeline: ✅ COMPLETE, now including the physical-device last mile
+- The stub app builds locally and in CI, launches in the simulator, and — new —
+  **installs and runs on a physical iPad Pro 13" (M5)** with automatic signing
+  (personal team `NCYQDHQ93F`; certificate minted headlessly on first build)
+  and `devicectl` install/launch. Wireless reinstalls work via the CoreDevice
+  network tunnel once USB-paired.
+- Marker file pulled from the device sandbox (M11): `gpu=Apple M5 GPU`,
+  `fps=120.0`, `drawableSize=(3200.0, 2400.0)`.
 
-## Compile-census trajectory (the experiment's core data)
+### Objective 2 — Build-system port + census: ✅ 23/23 TUs COMPILE
+- The census grew from 14 tracked files (2 passing) to **23 tracked files, all
+  passing**, spanning: game logic (bg_pmove, g_main_mp, g_utils_mp), server
+  core (sv_main_mp), GSC script VM (scr_vm), animation (xmodel), physics
+  (phys_ode), command system (cmd), networking (msg_mp, huffman, win_net),
+  threading (threads), filesystem (com_files, win_common), shared utilities
+  (q_shared, com_math), sound coupling (snd_mss), Steam (win_steam), renderer
+  init (r_init), and the new iOS platform layer (sys_ios_paths, sys_ios_main,
+  msvc_crt_compat, snd_ios_stub).
+- Zero platform headers and zero platform symbols remain in any tracked TU's
+  error path. `win_main.cpp` was retired from the census in favor of its
+  replacement, `src/ios/sys_ios_main.mm`.
+- Shared compat surface: [`src/ios/msvc_crt_compat.h`](src/ios/msvc_crt_compat.h)
+  (MSVC CRT spellings, Interlocked* atomics with Win32 return semantics,
+  `__rdtsc`→`cntvct_el0`, secure-CRT variants) and
+  [`src/ios/win32_tags.h`](src/ios/win32_tags.h) (Win32 struct tags absent from
+  DXVK's headers, `ARRAYSIZE`, `Sleep`).
 
-| Round | Change | Result |
+### Objective 3 — Filesystem sandboxing: ✅ POSIX PORT LANDED
+- Beyond the original dvar-seam patch: `com_files.cpp`/`win_common.cpp` now have
+  real POSIX implementations (stat/opendir/readdir/mkdir/getcwd) behind
+  `KISAK_IOS` gates, backslash path production fixed at its two sources, and
+  the LP64 landmines on the FS boot path fixed (DvarValue `.integer`-as-pointer
+  union reads → `.string`, `Sys_ListFiles` 4-byte-pointer sizings).
+
+### Objective 4 — Renderer (TRANSLATION path): ✅ FRONTIER RESOLVED AT THE LIBRARY LEVEL
+- **`libdxvk_d3d9.a` exists for arm64-apple-ios.** dxvk v2.7.1 cross-compiles
+  with a 5-hunk patch ([`scripts/platform/ios/dxvk-v2.7.1-ios.patch`](scripts/platform/ios/dxvk-v2.7.1-ios.patch)):
+  an `__APPLE__` gate in `util_win32_compat.h` (the entire "DXVK has no Apple
+  support" wall was one preprocessor conditional), an lzcnt overload ambiguity,
+  Apple's one-argument `pthread_setname_np`, a missing `<cstddef>`, and
+  static-archive linking on Darwin. WSI backend: SDL2 built for iOS (official
+  upstream support). `Direct3DCreate9`/`Direct3DCreate9Ex` verified exported.
+- One-command reproducer: [`scripts/platform/ios/build-dxvk-ios.sh`](scripts/platform/ios/build-dxvk-ios.sh).
+- MoltenVK v1.4.1 (prebuilt iOS xcframework) staged as the Vulkan
+  implementation for runtime bring-up.
+- The engine-side seam is in place: `R_CreateWindow` on iOS adopts the app
+  shell's CAMetalLayer view via `Sys_iOS_GetHostWindow()`
+  ([`src/ios/r_ios_window.h`](src/ios/r_ios_window.h)).
+
+### Objective 5 — Input/graphics surface: ✅ EXPANDED AND DEVICE-VERIFIED
+- Stub v4 settings menu: 3-tier shader quality (three real Metal pipeline
+  states), capability-gated ray-tracing toggle (`MTLDevice.supportsRaytracing`;
+  the M5 reports **supported** — the DXVK/MoltenVK path still carries no RT,
+  so the toggle is the surface for a future native-Metal experiment), render
+  scale 25–100%, live resolution readout, 30/60/120/Max frame cap, measured
+  FPS. On the iPad: **`metalfx=spatial 1600x1200 → 3200x2400`** — the first
+  execution of the MetalFX code path (the simulator SDK lacks the module).
+
+### NEW — Objective 6, engine linking: 🟡 FIRST ENGINE CODE EXECUTING ON iOS
+- [`scripts/platform/ios/build-engine-lib.sh`](scripts/platform/ios/build-engine-lib.sh)
+  archives every census-passing TU into `ios/libs/<sdk>/libkisakcod.a` (device
+  + simulator). The stub links the leaf subset (`libkisaksmoke.a`) plus a
+  documented scaffolding TU ([`ios/Stub/EngineSmoke.cpp`](ios/Stub/EngineSmoke.cpp))
+  and calls `Vec3NormalizeTo`, `GetMinBitCountForNum`, `I_stricmpwild`.
+- Verified on simulator and device:
+  `engine=len=5.00 out=(0.60,0.00,0.80) bits255=8 bits1024=11 wild=0` —
+  every value exactly as predicted, including the network bit-packing path
+  that runs through the LP64 `_BitScanReverse` fix.
+
+---
+
+## The four walls, revisited
+
+| # | Wall | Status after M11 |
 |---|---|---|
-| 1 | raw engine vs iOS SDK | 0/13 compile; strata: layout asserts, `INT_MIN`, `random()` clash, `__declspec`, Windows.h/dinput.h, Miles |
-| 2 | climits, random rename, -fdeclspec, 2 asserts relaxed, M3 FS patch | fix classes verified gone; `sys_ios_paths.mm` PASS; next strata exposed |
-| 3 | ALL 249 asserts relaxed (KISAK_LAYOUT_ASSERT), -fms-extensions | SSE wall reached (`xmmintrin.h` x86-only) at 6 TUs; `d3d9.h` leak visible in script/anim/physics |
-| 4 | sse2neon vendored | SSE wall gone; DXVK stage: rb_backend passes `<d3d9.h>` ✅ |
-| 5 | threads.h/com_files gateway shims, forward-enum, assert variants | 8 TUs converge on the single `d3d9.h` wall; r_init clears all renderer headers in DXVK stage |
-| 6 | DXVK headers promoted to baseline; mss.h include gated; ODE malloc.h | ODE `vadefs.h` exposed (fixed round 7) |
-| 7 | ODE stdarg fix | 10 TUs converge on ONE engine-internal C++ error: broken never-instantiated template (`ui_shared.h:1401`) — zero platform headers left in their error paths |
-| 8 | `-fdelayed-template-parsing` (MSVC template semantics) | **`bg_pmove.cpp` PASSES — first full engine TU compiling for arm64-apple-ios.** Remaining classes: zlib `Byte` typedef clash, `HWND__` tag absent from DXVK's windows_base.h (both shallow), plus the two by-design terminal walls (win32 layer / Miles) |
+| 1 | **32-bit layout assumption** (249 asserts; fastfile deserialization) | UNCHANGED — still the fundamental wall, gates loading real game data. Compile-relaxed everywhere; runtime translation/redesign still required. LP64 fixes so far are targeted (FS boot path, msg bit-scan). |
+| 2 | **Win32 platform layer** | ✅ PORTED at the census surface: pthreads threads, POSIX fs, BSD sockets, iOS entry layer, windowing seam. Volume remains in untracked TUs, but every family now has a landed, compiling exemplar to pattern-match. |
+| 3 | **Binary-only x86 DLLs** (Miles/Bink/Steam) | Steam ✅ no-op backend. Miles ✅ typed stub (`mss_ios_stub.h` + no-op `AIL_*` backend) — AVAudioEngine implementation still future work. Bink untouched. |
+| 4 | **Inline x86 `__asm`** (73 sites) | UNCHANGED — none blocked the census set; mechanical NEON/C rewrites remain for cg_ents and friends. |
 
-Win32 regression: run 29169595761 (workflow_dispatch on final HEAD, Debug+Release full
-engine build) — **both configurations green** (Release 24m41s, Debug 17m13s). Every
-engine-source edit made by this experiment is invisible to the MSVC/win32 build.
+## What a human does next (ordered, updated)
 
----
+1. **Renderer runtime bring-up** (the new #1): link `libdxvk_d3d9.a` + MoltenVK
+   + SDL2-iOS into the stub, create an SDL window over the CAMetalLayer view,
+   call `Direct3DCreate9` and drive one clear+present through
+   DXVK→Vulkan→MoltenVK→Metal. Success = the stub's triangle replaced by a
+   D3D9-cleared frame. All libraries exist; this is integration work with
+   real unknowns (MoltenVK feature coverage for DXVK's d3d9 requirements —
+   check `MVK_ALLOW_METAL_ARGUMENT_BUFFERS`, tessellation-free SM3 paths).
+2. **Grow the engine archive toward `Com_Init`**: graduate TUs in
+   census-guided waves (dvar.cpp, com_memory.cpp mmap port, common_mp.cpp,
+   database/*) until the smoke test can call `Com_Init` with a stub
+   filesystem — the "engine boots headless on iOS" milestone.
+3. **Wall 1 for real**: 64-bit fastfile layout translation (or offset-handles
+   per DEPENDENCY_MAP §12), gated behind a working headless boot.
+4. **Audio**: AVAudioEngine behind the existing `AIL_*` stub surface.
+5. **Game data**: user-supplied COD4 assets into `Documents/` via the Files
+   app (fs_homepath already points there).
 
-## What a human must do next (ordered)
+## Honest inventory
 
-1. **On the Mac (30 min):** clone the repo, `brew install xcodegen`, follow
-   [ios/README.md](ios/README.md) Path A → stub on your physical iPhone. This completes
-   Objective 1's last mile with your Apple ID.
-2. **First real frontier task (days):** attempt a native arm64-apple-ios build of DXVK's
-   d3d9 module + MoltenVK (meson cross file; start from dxvk's Linux native build and
-   the community dxvk-macOS forks). Success = a linkable `libdxvk_d3d9.a`. This is the
-   riskiest unknown in the whole port — resolve it before investing in walls 1-2.
-   - Fallback if DXVK-on-iOS proves infeasible: NATIVE_METAL rewrite behind the
-     `rb_backend` command-buffer seam (~620 interface + ~453 state/draw call sites,
-     mapped in DEPENDENCY_MAP §8).
-3. **Then the volume work, in census-guided order:** pthreads `threads.cpp` port →
-   `win_net.cpp` BSD sockets → `src/ios` platform layer replacing `win_main.cpp`
-   (UIKit + CADisplayLink driving `Com_Frame`) → Miles/Bink/Steam shims → and only then
-   wall 1 (fastfile 64-bit layout), which gates actually *loading game data*.
-4. **Game data:** COD4 assets are not redistributable — the user must supply their own
-   copy; plan an on-device import path (Files app into Documents/, which fs_homepath
-   already points at).
-
-## Honest failure inventory
-
-- Nothing was made to *run* beyond the stub app — no engine TU has fully compiled except
-  the new iOS platform file (by design: census-driven probe, not a completed port).
-- `gh repo create --push` was blocked by the permission system until explicit user
-  approval (correctly), and the first push was rejected for missing `workflow` OAuth
-  scope — fixed with a documented one-time `gh auth refresh -s workflow` device flow.
-- The first DXVK census attempt failed on a wrong assumption (d3d9.h vendored directly in
-  dxvk — it's a submodule); diagnosed via GitHub API and fixed the same round.
-- `-fms-extensions` and blanket assert-relaxation are probe tools that could mask real
-  bugs later; both are confined to `KISAK_PLATFORM=ios` and individually grep-able.
+- Nothing renders through DXVK yet — the library links, the engine's renderer
+  TU compiles, but no Vulkan instance has been created on iOS in this repo.
+- The engine smoke test executes 3 leaf functions; 21 externs are satisfied by
+  documented scaffolding stubs in `EngineSmoke.cpp`, not real subsystems.
+- `-fms-extensions`, relaxed layout asserts, and `-Wno-c++11-narrowing` remain
+  probe-wide; each is grep-able and confined to `KISAK_PLATFORM=ios`.
+- The win32 build's byte-identity relies on `#else` branches preserving the
+  original code verbatim; the Windows CI regression build is the enforcement
+  mechanism (dispatched on the M8–M11 tree — see badge/Actions).
+- Miles/Bink remain stubs; sound is silent by design until the AVAudioEngine
+  backend lands.

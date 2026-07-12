@@ -58,7 +58,14 @@ Eight rounds of a CI **compile census** — representative engine files compiled
 | 7 | ODE dependency fixes | zero platform headers left in 10 TUs' error paths |
 | 8 | `-fdelayed-template-parsing` | **`bg_pmove.cpp` compiles clean for `arm64-apple-ios`** |
 
-Full blow-by-blow log with exact compiler errors: **[PORT_JOURNAL.md](PORT_JOURNAL.md)** · Final analysis: **[FRONTIER_REPORT.md](FRONTIER_REPORT.md)**
+The Mac bring-up session (journal M7–M11) then swept the census from 2/14 to
+**23/23** — pthreads threading, POSIX filesystem, BSD-socket networking, a
+typed Miles stub, a no-op Steam backend, the iOS platform entry layer, and the
+renderer-init windowing seam — built **DXVK's d3d9 module as an
+arm64-apple-ios static library** (the previous "next frontier"), and linked
+the first engine code into the app, **verified executing on an iPad Pro (M5)**.
+
+Full blow-by-blow log with exact compiler errors: **[PORT_JOURNAL.md](PORT_JOURNAL.md)** · Current status & next steps: **[FRONTIER_REPORT.md](FRONTIER_REPORT.md)**
 
 ## Architecture (chosen path)
 
@@ -90,9 +97,9 @@ The renderer follows the **translation** strategy (as used by the C&C Generals i
 
 | Path | What it is |
 |---|---|
-| [`ios/`](ios/) | The iOS app shell: XcodeGen spec + Swift/Metal stub with MetalFX, controller support, settings menu, and signing runbooks ([ios/README.md](ios/README.md)) |
-| [`src/ios/`](src/ios/) | First engine-side iOS platform files (sandbox path providers) |
-| [`scripts/platform/ios/`](scripts/platform/ios/) | `KISAK_PLATFORM=ios` toolchain flags + DXVK header wiring |
+| [`ios/`](ios/) | The iOS app shell: XcodeGen spec + Swift/Metal stub with MetalFX, controller support, graphics settings menu, the engine-smoke bridge, and signing runbooks ([ios/README.md](ios/README.md)) |
+| [`src/ios/`](src/ios/) | The engine-side iOS platform layer: sandbox paths, platform entry (`sys_ios_main.mm`), MSVC-CRT/Win32 compat headers, Miles stub |
+| [`scripts/platform/ios/`](scripts/platform/ios/) | `KISAK_PLATFORM=ios` toolchain flags, DXVK header wiring, **`build-dxvk-ios.sh`** (renderer library), **`build-engine-lib.sh`** (engine archive), the DXVK iOS patch |
 | [`scripts/ios/`](scripts/ios/) | The compile-census target (files graduate in as the port advances) |
 | [`.github/workflows/`](.github/workflows/) | iOS stub build + simulator-launch proof · engine compile census · Windows regression build |
 | [PORT_JOURNAL.md](PORT_JOURNAL.md) | The experiment log — every attempt, exact errors, next hypothesis |
@@ -121,16 +128,32 @@ cmake -B build-ios -DKISAK_PLATFORM=ios -DCMAKE_SYSTEM_NAME=iOS \
 
 or just push a change under `src/` — the census workflow runs it for you and publishes the per-file error table as an artifact.
 
+### Build the renderer library + engine archive (Mac)
+
+```bash
+# DXVK d3d9 as an arm64-apple-ios static library (SDL2-iOS WSI, ~10 min)
+./scripts/platform/ios/build-dxvk-ios.sh dxvk-ios-work
+
+# Every census-passing engine TU into ios/libs/<sdk>/libkisakcod.a
+git clone --depth 1 --branch v2.7.1 --recurse-submodules=include/native/directx \
+    --shallow-submodules https://github.com/doitsujin/dxvk ../dxvk
+./scripts/platform/ios/build-engine-lib.sh ../dxvk/include/native both
+```
+
+Needs cmake/meson/ninja/glslang on PATH (no Homebrew required — see the header
+of each script for binary-release install one-liners).
+
 ### Build the original Windows game
 
 Unchanged from upstream — see [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md). All iOS work is `#ifdef KISAK_IOS`-gated; the win32 build is verified green in CI on every tree that touched engine source.
 
 ## Roadmap
 
-1. **DXVK d3d9 as an arm64-apple-ios library** (meson cross-build + MoltenVK) — the gating unknown; everything else is enumerable work.
-2. pthreads port of `qcommon/threads.cpp` → BSD-sockets port of `win_net.cpp` → UIKit platform layer replacing `win_main.cpp`.
-3. Audio/video/Steam shims (AVAudioEngine, AVFoundation, no-op).
-4. The 64-bit fastfile wall — load-time struct translation, gates loading real game data.
+1. ~~DXVK d3d9 as an arm64-apple-ios library~~ ✅ **done** — `libdxvk_d3d9.a` builds with a [5-hunk patch](scripts/platform/ios/dxvk-v2.7.1-ios.patch); see [build-dxvk-ios.sh](scripts/platform/ios/build-dxvk-ios.sh).
+2. ~~pthreads `threads.cpp` → BSD-sockets `win_net.cpp` → platform layer replacing `win_main.cpp`~~ ✅ **done** — all census-verified (`sys_ios_main.mm` is the entry layer).
+3. **Renderer runtime bring-up** (current frontier): DXVK + MoltenVK + SDL2-iOS linked into the stub, one D3D9 clear+present end-to-end onto the CAMetalLayer.
+4. **Engine boot**: graduate TUs toward a headless `Com_Init` (dvar, com_memory mmap port, common_mp, database).
+5. The 64-bit fastfile wall — load-time struct translation; gates loading real game data. Then AVAudioEngine behind the landed `AIL_*` stub surface.
 
 ## Credits & legal
 
