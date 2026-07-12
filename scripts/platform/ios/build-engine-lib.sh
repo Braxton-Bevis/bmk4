@@ -38,6 +38,17 @@ build_one_sdk() {
   xcrun libtool -static -o "ios/libs/$sdk/libkisakcod.a" "${objs[@]}" 2>/dev/null
   echo "[$sdk] archived $ok TUs (skipped $skip) -> ios/libs/$sdk/libkisakcod.a"
   lipo -info "ios/libs/$sdk/libkisakcod.a"
+
+  # Leaf subset the stub app links today (see ios/Stub/EngineSmoke.cpp): TUs
+  # whose engine-extern closure is small enough for the documented scaffolding.
+  local smoke=()
+  for leaf in src_universal_com_math.cpp.o src_universal_q_shared.cpp.o \
+              src_qcommon_msg_mp.cpp.o src_qcommon_huffman.cpp.o \
+              src_ios_msvc_crt_compat.cpp.o; do
+    [ -f "$OBJDIR/$leaf" ] && smoke+=("$OBJDIR/$leaf")
+  done
+  xcrun libtool -static -o "ios/libs/$sdk/libkisaksmoke.a" "${smoke[@]}" 2>/dev/null
+  echo "[$sdk] smoke subset (${#smoke[@]} TUs) -> ios/libs/$sdk/libkisaksmoke.a"
 }
 
 case "$WHICH" in

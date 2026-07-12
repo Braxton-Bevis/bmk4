@@ -24,6 +24,13 @@ jobs:
           xcodebuild -version
           xcrun simctl list runtimes
 
+      - name: Build engine archive (libkisakcod.a + libkisaksmoke.a)
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch v2.7.1 --recurse-submodules=include/native/directx --shallow-submodules \
+            https://github.com/doitsujin/dxvk dxvk-headers
+          ./scripts/platform/ios/build-engine-lib.sh "$PWD/dxvk-headers/include/native" iphonesimulator
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -78,6 +85,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Build engine archive (libkisakcod.a + libkisaksmoke.a)
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch v2.7.1 --recurse-submodules=include/native/directx --shallow-submodules \
+            https://github.com/doitsujin/dxvk dxvk-headers
+          ./scripts/platform/ios/build-engine-lib.sh "$PWD/dxvk-headers/include/native" iphoneos
 
       - name: Install XcodeGen
         run: brew install xcodegen
