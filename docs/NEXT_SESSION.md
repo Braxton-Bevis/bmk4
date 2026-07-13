@@ -1,8 +1,9 @@
 # NEXT_SESSION - BMK4 context handoff (2026-07-13, after M14 CI verification)
 
-Read `FRONTIER_REPORT.md`, the latest `PORT_JOURNAL.md` entries, and
-`docs/FASTFILE_PLAN.md` before continuing. Re-reference this plan before each
-edit and refresh it whenever work pauses.
+Read `FRONTIER_REPORT.md`, the latest `PORT_JOURNAL.md` entries,
+`docs/M14_PMOVE_SANDBOX_REPORT.md`, and `docs/FASTFILE_PLAN.md` before
+continuing. Re-reference this plan before each edit and refresh it whenever
+work pauses.
 
 ## Verified state
 
@@ -24,6 +25,10 @@ pmoveLive=org=(0.0,0.0,0.0) vel=(0.0,0.0,0.0) speed=0 ground=1
   `bg_jump`, `bg_slidemove`, `bg_mantle`, and real `AngleVectors`.
 - Windows regression run `29267514051`: Debug and Release green for SP, MP,
   and dedicated-server targets.
+- Pushed-main repeats are also green at core handoff commit `8639782`: census
+  run `29268715852` is 30/30, iOS run `29268716011` repeats the exact marker
+  and unsigned device build, and Windows run `29268715967` passes Debug and
+  Release.
 - Local static gates are green: `git diff --check`, Git Bash script syntax,
   30-entry unique/existing census paths, five exact required pmove objects,
   archive link order, exact marker occurrences, and retained M13 boot closure.
@@ -55,6 +60,10 @@ pmoveLive=org=(0.0,0.0,0.0) vel=(0.0,0.0,0.0) speed=0 ground=1
 - iOS CI still asserts the exact M13 boot line and now asserts the exact M14
   pmove line. Device builds still reproduce DXVK/MoltenVK and verify arm64/iOS
   load commands. Windows engine source behavior remains green.
+- Added `docs/M14_PMOVE_SANDBOX_REPORT.md`, a comprehensive implementation,
+  evidence, hazard, limitation, physical-test, and next-work record. The iOS
+  runbook now explicitly stages the untracked engine/DXVK/MoltenVK libraries
+  required by a clean source checkout.
 
 ## Explicitly unverified
 
@@ -63,6 +72,8 @@ pmoveLive=org=(0.0,0.0,0.0) vel=(0.0,0.0,0.0) speed=0 ground=1
   An unsigned IPA or simulator artifact cannot satisfy this gate.
 - The sandbox is deliberately flat. It does not prove collision against a
   COD4 map, full `Sys_QueEvent` input injection, or the complete game loop.
+- Hosted CI leaves the controller neutral. It proves the live post-reset frame
+  path, not interactive thumbstick/A/B feel or response.
 - Full headless `Com_Init`, fastfile loading, gameplay, audio, and a match.
   Phase 3 and fastfile work did not begin during M14.
 - No COD4 assets are installed in this workspace. Never commit or upload
@@ -75,7 +86,8 @@ pmoveLive=org=(0.0,0.0,0.0) vel=(0.0,0.0,0.0) speed=0 ground=1
    and feel-test left-stick movement, A jump, and held-B sprint. Append a
    physical-device M14 addendum with the pulled marker and observations. This
    is the only remaining Phase 2 boundary and does not invalidate the hosted
-   proof while hardware is unavailable.
+   proof while hardware is unavailable. It may be deferred while Phase 3
+   begins, but it is mandatory before any physical-device M13/M14 claim.
 2. In a new bounded slice, begin Phase 3 headless `Com_Init` with census waves
    of 5-10 TUs maximum. Each wave gets an LP64 sweep and `jmp_buf` audit and
    must be pushed green before the next; never start a wave that cannot finish

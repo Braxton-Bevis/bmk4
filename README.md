@@ -70,7 +70,7 @@ verified the first linked engine code on an iPad Pro (M5). M14 now tracks
 and friction on an asset-free synthetic floor while preserving the M13 staged
 boot marker and the Windows build.
 
-Full blow-by-blow log with exact compiler errors: **[PORT_JOURNAL.md](PORT_JOURNAL.md)** · Current status & next steps: **[FRONTIER_REPORT.md](FRONTIER_REPORT.md)**
+Full blow-by-blow log with exact compiler errors: **[PORT_JOURNAL.md](PORT_JOURNAL.md)** · Detailed M14 implementation/evidence report: **[docs/M14_PMOVE_SANDBOX_REPORT.md](docs/M14_PMOVE_SANDBOX_REPORT.md)** · Current status & next steps: **[FRONTIER_REPORT.md](FRONTIER_REPORT.md)**
 
 ## Architecture (chosen path)
 
@@ -108,6 +108,7 @@ The renderer follows the **translation** strategy (as used by the C&C Generals i
 | [`scripts/ios/`](scripts/ios/) | The compile-census target (files graduate in as the port advances) |
 | [`.github/workflows/`](.github/workflows/) | iOS stub build + simulator-launch proof · engine compile census · Windows regression build |
 | [PORT_JOURNAL.md](PORT_JOURNAL.md) | The experiment log — every attempt, exact errors, next hypothesis |
+| [docs/M14_PMOVE_SANDBOX_REPORT.md](docs/M14_PMOVE_SANDBOX_REPORT.md) | Comprehensive Phase 2 implementation, evidence, limitations, physical-test, and handoff report |
 | [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md) | Every Win32/D3D9/x86 dependency → its iOS replacement, with effort ratings |
 | [FRONTIER_REPORT.md](FRONTIER_REPORT.md) | Furthest milestone, hard blockers, what a human does next |
 | [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md) | Original KisakCOD readme (Windows build instructions) |

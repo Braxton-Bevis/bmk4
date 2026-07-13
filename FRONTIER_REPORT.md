@@ -2,7 +2,8 @@
 
 **Updated:** 2026-07-13 (M14 hosted-Mac verification) · **Repo:**
 `Braxton-Bevis/bmk4` · **Companion docs:** [PORT_JOURNAL.md](PORT_JOURNAL.md)
-(M0-M14), [DEPENDENCY_MAP.md](DEPENDENCY_MAP.md), and
+(M0-M14), [docs/M14_PMOVE_SANDBOX_REPORT.md](docs/M14_PMOVE_SANDBOX_REPORT.md),
+[DEPENDENCY_MAP.md](DEPENDENCY_MAP.md), and
 [docs/FASTFILE_PLAN.md](docs/FASTFILE_PLAN.md).
 
 Current frontier: **30/30 tracked engine translation units compile for

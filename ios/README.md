@@ -2,6 +2,9 @@
 
 Everything here is reproducible from a clean clone. The `.xcodeproj` is generated,
 never hand-edited: [project.yml](project.yml) is the source of truth.
+The linked static libraries and DXVK headers under `ios/libs/` are intentionally
+untracked. A clean source build must stage them first; the device workflow is
+the canonical, hash-checked recipe.
 
 ## What exists
 
@@ -23,11 +26,39 @@ never hand-edited: [project.yml](project.yml) is the source of truth.
 ## Path A — on a Mac (the finalization machine)
 
 ```bash
-brew install xcodegen        # once
+# From the repository root: reproduce the device workflow's untracked inputs.
+brew install xcodegen meson ninja glslang
+./scripts/platform/ios/build-dxvk-ios.sh dxvk-ios-work
+
+mkdir -p ios/libs/iphoneos ios/libs/dxvk-include
+for archive in libdxvk_d3d9.a libdxso.a libdxvk.a libutil.a \
+               libspirv.a libwsi.a libvkcommon.a libdisplay-info.a; do
+  source=$(find dxvk-ios-work/dxvk/build-ios -type f -name "$archive" -print -quit)
+  test -n "$source"
+  cp "$source" ios/libs/iphoneos/
+done
+cp -R dxvk-ios-work/dxvk/include/native/directx ios/libs/dxvk-include/
+cp -R dxvk-ios-work/dxvk/include/native/windows ios/libs/dxvk-include/
+
+curl -L --fail --retry 3 \
+  https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.1/MoltenVK-ios.tar \
+  -o MoltenVK-ios.tar
+echo "54336b90212c390ed5935c96460aed3bf651ad7d3c0f0e956586ce18e9c0b701  MoltenVK-ios.tar" \
+  | shasum -a 256 -c -
+tar -xf MoltenVK-ios.tar
+cp MoltenVK/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a \
+  ios/libs/iphoneos/
+
+./scripts/platform/ios/build-engine-lib.sh \
+  "$PWD/dxvk-ios-work/dxvk/include/native" iphoneos
 cd ios
 xcodegen generate
 open KisakStub.xcodeproj
 ```
+
+These commands mirror the `Build renderer + engine archives` job in
+[`../.github/workflows/ios-stub.yml`](../.github/workflows/ios-stub.yml).
+Re-check that workflow if its pinned DXVK, MoltenVK version, or hash changes.
 
 1. In Xcode: select the `KisakStub` target → *Signing & Capabilities* → check
    **Automatically manage signing** → pick your **Team** (a free personal Apple ID works:
@@ -43,7 +74,8 @@ open KisakStub.xcodeproj
 
 ## Path B — from Windows, no Mac (what CI + Sideloadly gives you)
 
-1. Download the `KisakStub-unsigned-ipa` artifact from the GitHub Actions run.
+1. Download the `KisakStub-unsigned-ipa` artifact from the GitHub Actions run
+   (14-day retention; rerun the workflow after expiry).
 2. Install [Sideloadly](https://sideloadly.io/) (needs iTunes drivers — already present on
    this machine, Apple Mobile Device Service is running).
 3. Connect the iPhone via USB, drag the `.ipa` into Sideloadly, enter your Apple ID.
@@ -54,7 +86,19 @@ open KisakStub.xcodeproj
 ## Simulator quickstart on a Mac
 
 ```bash
-cd ios && xcodegen generate
+# From the repository root: stage simulator headers and engine archives first.
+git clone --depth 1 --branch v2.7.1 --recurse-submodules=include/native/directx \
+  --shallow-submodules https://github.com/doitsujin/dxvk dxvk-headers
+git -C dxvk-headers apply --verbose \
+  "$PWD/scripts/platform/ios/dxvk-v2.7.1-ios.patch"
+mkdir -p ios/libs/dxvk-include
+cp -R dxvk-headers/include/native/directx ios/libs/dxvk-include/
+cp -R dxvk-headers/include/native/windows ios/libs/dxvk-include/
+./scripts/platform/ios/build-engine-lib.sh \
+  "$PWD/dxvk-headers/include/native" iphonesimulator
+
+cd ios
+xcodegen generate
 xcodebuild -project KisakStub.xcodeproj -scheme KisakStub -sdk iphonesimulator \
   -derivedDataPath dd CODE_SIGNING_ALLOWED=NO build
 xcrun simctl boot "iPhone 16"   # or any available iPhone simulator
@@ -72,6 +116,10 @@ player (physical controllers work identically via GCController). A queues a
 one-frame jump and switches the background palette; B holds sprint and recenters.
 The scene renders at 0.5× resolution and MetalFX spatial-upscales it to native
 when the GPU supports it (iOS 16+, `MTLFXSpatialScalerDescriptor.supportsDevice`).
+
+Hosted CI does not press the virtual controls. Its neutral `pmoveLive` line
+proves the post-proof live-frame bridge and marker update; interactive stick,
+A, and B response remains part of the physical-device feel test.
 
 M14 hosted run `29267514067` built, launched, and captured this exact movement
 proof while retaining the M13 staged-boot line:

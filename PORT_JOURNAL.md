@@ -642,6 +642,11 @@ thumbstick and show origin/velocity on the HUD.
 - Refreshed the root README, frontier report, iOS runbook, and authoritative
   handoff with exact M14 evidence and the physical-device boundary; corrected
   the runbook's documented app deployment target from iOS 15.0 to 16.0.
+- Added `docs/M14_PMOVE_SANDBOX_REPORT.md`, a comprehensive report covering
+  architecture, every changed file, proof invariants, hazards fixed, hosted
+  and pushed-main evidence, remaining gaps, legal boundaries, and the exact
+  physical-iPad checklist. Corrected the clean-clone runbook to stage its
+  intentionally untracked engine/DXVK/MoltenVK prerequisites before Xcode.
 
 **Errors hit and fixed:** static closure review caught the parked abort-loud
 `AngleVectors` body on the per-frame path, missing app header/define settings,
@@ -668,6 +673,9 @@ pmoveLive=org=(0.0,0.0,0.0) vel=(0.0,0.0,0.0) speed=0 ground=1
   unsigned IPA. This proves device compilation/linkage, not device runtime.
 - Windows run `29267514051`: Debug and Release green for SP, MP, and
   dedicated-server targets.
+- Pushed-main repeat runs are also green at `8639782`: census `29268715852`
+  (30 PASS, 0 FAIL), iOS `29268716011` (same exact marker plus unsigned device
+  build), and Windows `29268715967` (Debug and Release SP/MP/dedicated).
 - Final source-level audit found no alternate `Pmove`, false-positive proof,
   bridge ABI mismatch, trace-consumption mismatch, or archive/link-order
   escape. Local `git diff --check`, workflow/script syntax, census-path, exact
