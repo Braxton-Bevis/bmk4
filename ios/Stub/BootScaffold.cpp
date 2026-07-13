@@ -217,7 +217,7 @@ const char *SL_ConvertToString(uint32_t stringValue)
 uint32_t SL_FindString(const char *str)
 {
     if (!str)
-        return 0;
+        BootScaffoldAbort("SL_FindString(null)");
     pthread_mutex_lock(&s_stringLock);
     for (uint32_t i = 0; i < 128; ++i) {
         if (s_strings[i].value && strcmp(s_strings[i].value, str) == 0) {
