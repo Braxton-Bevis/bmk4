@@ -88,13 +88,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build engine archive (libkisakcod.a + libkisaksmoke.a)
+      - name: Build renderer + engine archives
         run: |
           set -euxo pipefail
-          git clone --depth 1 --branch v2.7.1 --recurse-submodules=include/native/directx --shallow-submodules \
-            https://github.com/doitsujin/dxvk dxvk-headers
-          git -C dxvk-headers apply --verbose "$GITHUB_WORKSPACE/scripts/platform/ios/dxvk-v2.7.1-ios.patch"
-          ./scripts/platform/ios/build-engine-lib.sh "$PWD/dxvk-headers/include/native" iphoneos
+          brew install meson ninja glslang
+          ./scripts/platform/ios/build-dxvk-ios.sh dxvk-ios-work
+
+          mkdir -p ios/libs/iphoneos ios/libs/dxvk-include
+          for archive in libdxvk_d3d9.a libdxso.a libdxvk.a libutil.a \
+                         libspirv.a libwsi.a libvkcommon.a libdisplay-info.a; do
+            source=$(find dxvk-ios-work/dxvk/build-ios -type f -name "$archive" -print -quit)
+            test -n "$source"
+            cp "$source" ios/libs/iphoneos/
+          done
+          cp -R dxvk-ios-work/dxvk/include/native/directx ios/libs/dxvk-include/
+          cp -R dxvk-ios-work/dxvk/include/native/windows ios/libs/dxvk-include/
+
+          curl -L --fail --retry 3 \
+            https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.1/MoltenVK-ios.tar \
+            -o MoltenVK-ios.tar
+          echo "54336b90212c390ed5935c96460aed3bf651ad7d3c0f0e956586ce18e9c0b701  MoltenVK-ios.tar" \
+            | shasum -a 256 -c -
+          tar -xf MoltenVK-ios.tar
+          cp MoltenVK/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a \
+            ios/libs/iphoneos/
+
+          ./scripts/platform/ios/build-engine-lib.sh \
+            "$PWD/dxvk-ios-work/dxvk/include/native" iphoneos
 
       - name: Install XcodeGen
         run: brew install xcodegen
