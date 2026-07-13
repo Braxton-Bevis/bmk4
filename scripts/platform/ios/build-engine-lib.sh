@@ -73,6 +73,37 @@ build_one_sdk() {
   [ "$pmove_missing" -eq 0 ] || return 1
   xcrun libtool -static -o "ios/libs/$sdk/libkisakpmove.a" "${pmove[@]}" 2>/dev/null
   echo "[$sdk] pmove subset (${#pmove[@]} TUs) -> ios/libs/$sdk/libkisakpmove.a"
+
+  # Phase 3 Wave 1 filesystem closure. This archive is exact and required:
+  # no member may be skipped, and the app links this subset in both lanes.
+  local cominit=() cominit_missing=0
+  local cominit_members=(
+    src_universal_com_files.cpp.o
+    src_universal_win_common.cpp.o
+    src_ios_sys_ios_paths.mm.o
+    src_qcommon_com_fileaccess.cpp.o
+    src_qcommon_unzip.cpp.o
+    src_stringed_stringed_hooks.cpp.o
+    src_stringed_stringed_ingame.cpp.o
+  )
+  for leaf in "${cominit_members[@]}"; do
+    if [ -f "$OBJDIR/$leaf" ]; then
+      cominit+=("$OBJDIR/$leaf")
+    else
+      echo "ERROR ($sdk): required Com_Init-wave object missing: $leaf" >&2
+      cominit_missing=1
+    fi
+  done
+  [ "$cominit_missing" -eq 0 ] || return 1
+  xcrun libtool -static -o "ios/libs/$sdk/libkisakcominit.a" "${cominit[@]}" 2>/dev/null
+  echo "[$sdk] Com_Init subset (${#cominit[@]} TUs) -> ios/libs/$sdk/libkisakcominit.a"
+
+  # Prove the archive member list is neither silently smaller nor padded.
+  local actual_members
+  actual_members=$(xcrun ar -t "ios/libs/$sdk/libkisakcominit.a")
+  diff -u \
+    <(printf '%s\n' "${cominit_members[@]}") \
+    <(printf '%s\n' "$actual_members")
 }
 
 case "$WHICH" in

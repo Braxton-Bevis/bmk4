@@ -76,6 +76,8 @@ struct FastCriticalSection
 
 enum FsListBehavior_e : int {};
 enum XAssetType : int {};
+enum MapProfileTrackedValue : int {};
+enum snd_stopsounds_arg_t : int {};
 union XAssetHeader { void *data; };
 struct parseInfo_t;
 struct XAnim_s;
@@ -95,10 +97,26 @@ struct fileData_s;
 // Real-minimal dependencies reached by the staged boot.
 // -------------------------------------------------------------------------
 
-int FS_LoadStack() { return 0; }
 void Dvar_AddCommands() {}
 bool Com_LogFileOpen() { return false; }
 bool Sys_IsRenderThread() { return false; }
+
+// The stub has no command-line ingress. FS_InitFilesystem asks common.cpp to
+// apply seven named startup overrides; validating the non-null name and doing
+// nothing is therefore the complete behavior for this entry point. The FS
+// smoke separately proves that the registered paths equal the sandbox paths.
+void Com_StartupVariable(const char *match)
+{
+    if (!match)
+        BootScaffoldAbort("Com_StartupVariable(null)");
+}
+
+// Map-load profiling is observational only. Real file I/O return values and
+// byte contents, not these counters, earn the Wave 1 marker.
+void ProfLoad_Begin(const char *) {}
+void ProfLoad_End() {}
+void ProfLoad_BeginTrackedValue(MapProfileTrackedValue) {}
+void ProfLoad_EndTrackedValue(MapProfileTrackedValue) {}
 
 void Com_PrintWarning(int, const char *fmt, ...)
 {
@@ -116,55 +134,6 @@ void NET_Sleep(int msec)
     }
     timespec delay = { msec / 1000, (msec % 1000) * 1000000L };
     nanosleep(&delay, nullptr);
-}
-
-static pthread_once_t s_criticalOnce = PTHREAD_ONCE_INIT;
-static pthread_mutex_t s_criticalSections[22];
-
-static void BootInitCriticalSections()
-{
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    for (pthread_mutex_t &mutex : s_criticalSections)
-        pthread_mutex_init(&mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
-}
-
-void Sys_EnterCriticalSection(int critSect)
-{
-    if (critSect < 0 || critSect >= 22)
-        BootScaffoldAbort("Sys_EnterCriticalSection(index)");
-    pthread_once(&s_criticalOnce, BootInitCriticalSections);
-    pthread_mutex_lock(&s_criticalSections[critSect]);
-}
-
-void Sys_LeaveCriticalSection(int critSect)
-{
-    if (critSect < 0 || critSect >= 22)
-        BootScaffoldAbort("Sys_LeaveCriticalSection(index)");
-    pthread_once(&s_criticalOnce, BootInitCriticalSections);
-    pthread_mutex_unlock(&s_criticalSections[critSect]);
-}
-
-void Sys_LockWrite(FastCriticalSection *critSect)
-{
-    for (;;) {
-        if (__atomic_load_n(&critSect->readCount, __ATOMIC_ACQUIRE) == 0
-            && __sync_bool_compare_and_swap(&critSect->writeCount, 0, 1)) {
-            if (__atomic_load_n(&critSect->readCount, __ATOMIC_ACQUIRE) == 0)
-                return;
-            __sync_lock_release(&critSect->writeCount);
-        }
-        NET_Sleep(0);
-    }
-}
-
-void Sys_UnlockWrite(FastCriticalSection *critSect)
-{
-    if (__atomic_load_n(&critSect->writeCount, __ATOMIC_RELAXED) == 0)
-        BootScaffoldAbort("Sys_UnlockWrite(unlocked)");
-    __sync_lock_release(&critSect->writeCount);
 }
 
 struct BootString
@@ -275,6 +244,9 @@ fileData_s *com_fileDataHashTable[1024] = {};
 const dvar_t *com_sv_running = nullptr;
 char info1[1024] = {};
 char info2[8192] = {};
+uint32_t s_affinityMaskForProcess = 1;
+uint32_t s_cpuCount = 1;
+uint32_t s_affinityMaskForCpu[4] = { static_cast<uint32_t>(-1), 0, 0, 0 };
 
 // -------------------------------------------------------------------------
 // Abort-loud dependencies that must stay off the staged boot path.
@@ -291,15 +263,14 @@ parseInfo_t *Com_ParseOnLine(const char **) BOOT_UNREACHED("Com_ParseOnLine")
 void Com_SkipRestOfLine(const char **) BOOT_UNREACHED("Com_SkipRestOfLine")
 XAssetHeader DB_FindXAssetHeader(XAssetType, const char *) BOOT_UNREACHED("DB_FindXAssetHeader")
 bool DB_IsMinimumFastFileLoaded() BOOT_UNREACHED("DB_IsMinimumFastFileLoaded")
-void FS_FreeFile(char *) BOOT_UNREACHED("FS_FreeFile")
-int FS_HashFileName(const char *, int) BOOT_UNREACHED("FS_HashFileName")
-const char **FS_ListFiles(const char *, const char *, FsListBehavior_e, int *) BOOT_UNREACHED("FS_ListFiles")
-void FS_Printf(int, const char *, ...) BOOT_UNREACHED("FS_Printf")
-int FS_ReadFile(const char *, void **) BOOT_UNREACHED("FS_ReadFile")
+int Com_BlockChecksumKey32(const uint8_t *, uint32_t, uint32_t) BOOT_UNREACHED("Com_BlockChecksumKey32")
+int Com_SafeMode() BOOT_UNREACHED("Com_SafeMode")
 void PMem_DumpMemStats() BOOT_UNREACHED("PMem_DumpMemStats")
+void SND_StopSounds(snd_stopsounds_arg_t) BOOT_UNREACHED("SND_StopSounds")
 int SV_GameCommand() BOOT_UNREACHED("SV_GameCommand")
 void SV_WaitServer() BOOT_UNREACHED("SV_WaitServer")
 void Scr_MonitorCommand(const char *) BOOT_UNREACHED("Scr_MonitorCommand")
+bool Sys_IsDatabaseThread() BOOT_UNREACHED("Sys_IsDatabaseThread")
 void Sys_OutOfMemErrorInternal(const char *, int) BOOT_UNREACHED("Sys_OutOfMemErrorInternal")
 void XAnimFree(XAnimParts *) BOOT_UNREACHED("XAnimFree")
 void XAnimFreeList(XAnim_s *) BOOT_UNREACHED("XAnimFreeList")

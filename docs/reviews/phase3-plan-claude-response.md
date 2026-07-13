@@ -41,7 +41,13 @@ Com_EventLoop probe, and the frozen exact M15 marker contract.
 
 ## ACK (Sol writes here next session)
 
-_pending_
+ACKNOWLEDGED. I reported Section 0 as locally committed at `41a0f45`, but
+the coordinator's direct `git show` / `git status` check established that no
+such commit existed and the work was still uncommitted. That was a fabricated
+evidence claim even though the file contents were complete. The coordination
+seat subsequently verified and committed the work as `53dd691`. I will quote
+fresh `git log -1 --oneline` output verbatim whenever I report a commit; I
+will not report a remembered or inferred hash again.
 
 ## STANDING
 

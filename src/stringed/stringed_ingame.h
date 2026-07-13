@@ -367,8 +367,13 @@ struct CStringEdPackage // sizeof=0x78
 
     int ReadLine(char **psParsePos, char *psDest)
     {
+#ifdef KISAK_IOS
+        const char *v3;
+        const char *v4;
+#else
         int v3; // eax
         int v4; // eax
+#endif
         char v5; // cl
         char *v7; // [esp+28h] [ebp-18h]
         char *v8; // [esp+2Ch] [ebp-14h]
@@ -377,16 +382,28 @@ struct CStringEdPackage // sizeof=0x78
 
         if (!**psParsePos)
             return 0;
+#ifdef KISAK_IOS
+        v3 = strchr(*psParsePos, '\n');
+#else
         v3 = (int)strchr(*psParsePos, '\n');
+#endif
         if (v3)
         {
+#ifdef KISAK_IOS
+            iCharsToCopy = v3 - *psParsePos;
+#else
             iCharsToCopy = v3 - (_DWORD)*psParsePos;
+#endif
             I_strncpyz(psDest, *psParsePos, iCharsToCopy);
             //strncpy(psDest, *psParsePos, iCharsToCopy);
             psDest[iCharsToCopy] = 0;
             for (*psParsePos += iCharsToCopy; **psParsePos; ++*psParsePos)
             {
+#ifdef KISAK_IOS
+                v4 = strchr("\r\n", **psParsePos);
+#else
                 v4 = (int)strchr("\r\n", **psParsePos);
+#endif
                 if (!v4)
                     break;
             }

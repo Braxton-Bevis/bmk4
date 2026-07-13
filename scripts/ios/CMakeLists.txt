@@ -21,9 +21,13 @@ set(IOS_PROBE_SOURCES
     "${SRC_DIR}/game_mp/g_utils_mp.cpp"      # server game utilities
     "${SRC_DIR}/server_mp/sv_main_mp.cpp"    # server core
     "${SRC_DIR}/qcommon/cmd.cpp"             # command system
+    "${SRC_DIR}/qcommon/com_fileaccess.cpp"  # stdio wrapper used by real filesystem I/O
     "${SRC_DIR}/qcommon/threads.cpp"         # threading (pthreads/mach under KISAK_IOS)
     "${SRC_DIR}/qcommon/huffman.cpp"         # network compression
     "${SRC_DIR}/qcommon/msg_mp.cpp"          # network message (de)serialization
+    "${SRC_DIR}/qcommon/unzip.cpp"           # IWD reader required by com_files object closure
+    "${SRC_DIR}/stringed/stringed_hooks.cpp" # language dvars/filesystem integration
+    "${SRC_DIR}/stringed/stringed_ingame.cpp"# asset-free localization package startup
     "${SRC_DIR}/universal/com_files.cpp"     # filesystem layer (Objective 3 target)
     "${SRC_DIR}/universal/win_common.cpp"    # sys utils (POSIX under KISAK_IOS)
     "${SRC_DIR}/universal/q_shared.cpp"      # shared string/parse utilities

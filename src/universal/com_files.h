@@ -128,6 +128,10 @@ int __cdecl FS_FileExists(char *file);
 int __cdecl FS_WriteFile(char *filename, char *buffer, uint32_t size);
 void __cdecl FS_ConvertPath(char *s);
 void __cdecl FS_InitFilesystem();
+#ifdef KISAK_IOS
+void FS_iOS_SetHeadlessNoAssets(bool enabled);
+bool FS_iOS_HeadlessNoAssetsActive();
+#endif
 uint32_t __cdecl FS_FOpenFileByMode(char *qpath, int *f, fsMode_t mode);
 void __cdecl FS_Flush(int f);
 void __cdecl FS_FreeFileList(const char **list);

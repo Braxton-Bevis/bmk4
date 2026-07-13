@@ -59,6 +59,21 @@ static fileHandleData_t fsh[65];
 char fs_gamedir[256];
 searchpath_s *fs_searchpaths;
 
+#ifdef KISAK_IOS
+static_assert(sizeof(searchpath_s) == 40, "arm64 searchpath_s ABI drift");
+static bool fs_iOSHeadlessNoAssets;
+
+void FS_iOS_SetHeadlessNoAssets(bool enabled)
+{
+    fs_iOSHeadlessNoAssets = enabled;
+}
+
+bool FS_iOS_HeadlessNoAssetsActive()
+{
+    return fs_iOSHeadlessNoAssets && useFastFile && !useFastFile->current.enabled;
+}
+#endif
+
 char __cdecl FS_SanitizeFilename(const char *filename, char *sanitizedName, int sanitizedNameSize);
 BOOL __cdecl FS_UseSearchPath(const searchpath_s *pSearch);
 int __cdecl FS_GetHandleAndOpenFile(const char *filename, const char *ospath, FsThread thread);
@@ -542,7 +557,11 @@ void __cdecl FS_FCloseFile(int h)
         f = FS_FileForHandle(h);
         FS_FileClose(f);
     }
+#ifdef KISAK_IOS
+    Com_Memset((uint32_t *)&fsh[h], 0, sizeof(fsh[h]));
+#else
     Com_Memset((uint32_t *)&fsh[h], 0, 284);
+#endif
 }
 
 void __cdecl FS_FCloseLogFile(int h)
@@ -1596,7 +1615,11 @@ void __cdecl FS_AddIwdFilesForGameDirectory(char *path, char *pszGameFolder)
             *((_WORD *)v2 + 4) = 8224;
         }
     }
+#ifdef KISAK_IOS
+    qsort(s0, numfiles, sizeof(s0[0]), (int(__cdecl *)(const void *, const void *))iwdsort);
+#else
     qsort(s0, numfiles, 4u, (int(__cdecl *)(const void *, const void *))iwdsort);
+#endif
     for (i = 0; i < numfiles; ++i)
     {
         if (I_strncmp(s0[i], "          ", 10))
@@ -1653,7 +1676,11 @@ void __cdecl FS_AddIwdFilesForGameDirectory(char *path, char *pszGameFolder)
                 v4 = *v6;
                 *iwdGamename++ = *v6++;
             } while (v4);
+#ifdef KISAK_IOS
+            search = (searchpath_s *)Z_Malloc(sizeof(searchpath_s), "FS_AddIwdFilesForGameDirectory", 3);
+#else
             search = (searchpath_s *)Z_Malloc(28, "FS_AddIwdFilesForGameDirectory", 3);
+#endif
             search->iwd = ZipFile;
             search->bLocalized = v10;
             search->language = piLanguageIndex;
@@ -1783,7 +1810,11 @@ void __cdecl FS_AddGameDirectory(char *path, char *dir, int bLanguageDirectory, 
     {
         I_strncpyz(fs_gamedir, szGameFolder, 256);
     }
+#ifdef KISAK_IOS
+    search = (searchpath_s *)Z_Malloc(sizeof(searchpath_s), "FS_AddGameDirectory", 3);
+#else
     search = (searchpath_s *)Z_Malloc(28, "FS_AddGameDirectory", 3);
+#endif
     v4 = (uint32_t*)Z_Malloc(512, "FS_AddGameDirectory", 3);
     search->dir = (directory_t *)v4;
     I_strncpyz(search->dir->path, path, 256);
@@ -1956,6 +1987,24 @@ void __cdecl FS_SortFileList(const char **filelist, int numfiles)
     int k; // [esp+8h] [ebp-10h]
     int numsortedfiles; // [esp+Ch] [ebp-Ch]
     int i; // [esp+10h] [ebp-8h]
+#ifdef KISAK_IOS
+    const char **sortedlist;
+
+    sortedlist = (const char **)Z_Malloc(sizeof(*sortedlist) * (numfiles + 1), "FS_SortFileList", 3);
+    sortedlist[0] = 0;
+    numsortedfiles = 0;
+    for (i = 0; i < numfiles; ++i)
+    {
+        for (j = 0; j < numsortedfiles && FS_PathCmp(filelist[i], sortedlist[j]) >= 0; ++j)
+            ;
+        for (k = numsortedfiles; k > j; --k)
+            sortedlist[k] = sortedlist[k - 1];
+        sortedlist[j] = filelist[i];
+        ++numsortedfiles;
+    }
+    Com_Memcpy(filelist, sortedlist, sizeof(*sortedlist) * numfiles);
+    Z_Free((char *)sortedlist, 3);
+#else
     char *sortedlist; // [esp+14h] [ebp-4h]
 
     sortedlist = (char*)Z_Malloc(4 * numfiles + 4, "FS_SortFileList", 3);
@@ -1972,6 +2021,7 @@ void __cdecl FS_SortFileList(const char **filelist, int numfiles)
     }
     Com_Memcpy(filelist, sortedlist, 4 * numfiles);
     Z_Free(sortedlist, 3);
+#endif
 }
 
 void __cdecl FS_NewDir_f()
@@ -2197,6 +2247,12 @@ void __cdecl FS_SetRestrictions()
 
 bool __cdecl FS_IsBasePathValid()
 {
+#ifdef KISAK_IOS
+    // Asset-free Phase 3 boots must opt in explicitly and must also disable
+    // fastfiles. Normal/future game boots retain the stock fatal sentinel.
+    if (FS_iOS_HeadlessNoAssetsActive())
+        return true;
+#endif
     return FS_ReadFile("fileSysCheck.cfg", 0) > 0;
 }
 
@@ -2567,7 +2623,11 @@ const char **__cdecl FS_ListFilteredFiles(
     if (sanitizedPath[0])
         ++pathDepth;
     user = Hunk_UserCreate(0x20000, "FS_ListFilteredFiles", 0, 0, 3);
+#ifdef KISAK_IOS
+    list = (const char **)Hunk_UserAlloc(user, sizeof(*list) * 8193u, alignof(const char *));
+#else
     list = (const char **)Hunk_UserAlloc(user, 0x8004u, 4);
+#endif
     *list++ = (const char *)user;
     for (search = searchPath; search; search = search->next)
     {
@@ -2726,12 +2786,20 @@ const char **__cdecl FS_ListFilteredFilesInLocation(
         {
             if (locationSearchPath)
             {
+#ifdef KISAK_IOS
+                locationSearch->next = (searchpath_s *)Hunk_UserAlloc(user, sizeof(searchpath_s), alignof(searchpath_s));
+#else
                 locationSearch->next = (searchpath_s *)Hunk_UserAlloc(user, 0x1Cu, 4);
+#endif
                 locationSearch = locationSearch->next;
             }
             else
             {
+#ifdef KISAK_IOS
+                locationSearchPath = (searchpath_s *)Hunk_UserAlloc(user, sizeof(searchpath_s), alignof(searchpath_s));
+#else
                 locationSearchPath = (searchpath_s *)Hunk_UserAlloc(user, 0x1Cu, 4);
+#endif
                 locationSearch = locationSearchPath;
             }
             locationSearch->next = 0;
@@ -2895,8 +2963,13 @@ void __cdecl FS_SV_Rename(char *from, char *to)
     char from_ospath[260]; // [esp+120h] [ebp-108h] BYREF
 
     FS_CheckFileSystemStarted();
+#ifdef KISAK_IOS
+    FS_BuildOSPath((char *)fs_homepath->current.string, from, (char *)"", from_ospath);
+    FS_BuildOSPath((char *)fs_homepath->current.string, to, (char *)"", to_ospath);
+#else
     FS_BuildOSPath((char *)fs_homepath->current.integer, from, (char *)"", from_ospath);
     FS_BuildOSPath((char *)fs_homepath->current.integer, to, (char *)"", to_ospath);
+#endif
     v2 = from_ospath;
     v2 += strlen(v2) + 1;
     to_ospath[v2 - &from_ospath[1] + 255] = 0;
@@ -2915,7 +2988,11 @@ int __cdecl FS_SV_FileExists(char *file)
     FILE *f; // [esp+10h] [ebp-10Ch]
     char testpath[260]; // [esp+14h] [ebp-108h] BYREF
 
+#ifdef KISAK_IOS
+    FS_BuildOSPath((char *)fs_homepath->current.string, file, (char *)"", testpath);
+#else
     FS_BuildOSPath((char *)fs_homepath->current.integer, file, (char *)"", testpath);
+#endif
     testpath[&testpath[strlen(testpath) + 1] - &testpath[1] - 1] = 0;
     f = FS_FileOpenReadBinary(testpath);
     if (!f)
@@ -3017,7 +3094,11 @@ int __cdecl FS_FOpenFileWriteToDirForThread(const char *filename, const char *di
     char ospath[260]; // [esp+0h] [ebp-108h] BYREF
 
     FS_CheckFileSystemStarted();
+#ifdef KISAK_IOS
+    FS_BuildOSPath((char *)fs_homepath->current.string, dir, filename, ospath);
+#else
     FS_BuildOSPath((char *)fs_homepath->current.integer, dir, filename, ospath);
+#endif
     if (fs_debug->current.integer)
         Com_Printf(10, "FS_FOpenFileWrite: %s\n", ospath);
     if (FS_CreatePath(ospath))

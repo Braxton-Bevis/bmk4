@@ -688,3 +688,63 @@ and exercise left-stick movement, A jump, and B sprint. No such device marker
 was pulled in M14, so physical runtime and feel are explicitly unverified.
 Phase 3 and fastfile work did not begin, and no proprietary assets were used.
 
+## Phase 3 Wave 1 candidate — real filesystem closure (2026-07-13, Windows seat; CI UNVERIFIED)
+
+**Attempted:** graduate the asset-free filesystem boot slice into the app and
+earn the frozen interim line only after the engine's own `FS_InitFilesystem`
+returns and real sandbox I/O succeeds.
+
+**Concrete changes (plain-language changelog):**
+
+- Added `BootFSSmoke.cpp`. Before filesystem startup it behavior-checks the
+  newly reached arm64 dvar enum and external-string pointer lanes. It then
+  explicitly enables the iOS headless/no-fastfile policy, calls real
+  `FS_InitFilesystem`, verifies `fs_basepath` is the bundle and `fs_homepath`
+  is Documents, proves `fileSysCheck.cfg` is absent, and requires an engine
+  write/read/byte-compare/free/delete round trip.
+- Added hard-required exact `libkisakcominit.a` archives for simulator and
+  device. Static closure tracing expanded the five-object hypothesis to seven
+  real objects: `com_files`, `win_common`, `sys_ios_paths`, `com_fileaccess`,
+  `unzip`, `stringed_hooks`, and `stringed_ingame`. Archive-member drift or a
+  missing object is now fatal, and both app link lanes include the archive.
+- Expanded the monotonic census from 30 to 34 with the four newly tracked
+  stdio/zip/localization TUs. The census gate now requires at least 34 entries
+  and every entry to pass.
+- Fixed newly reached LP64 hazards behind `KISAK_IOS` while preserving each
+  original expression in `#else`: dvar enum tables and external strings,
+  direct `DvarValue` domain callbacks, `searchpath_s` allocations, pointer
+  sorting/list storage, `fileHandleData_t` clearing, remaining filesystem dvar
+  path reads, language table accounting, and localization line parsing.
+- Shrunk the scaffold by deleting ten definitions now owned by real filesystem
+  and lock objects. New closure-only owners are explicit: command-line startup
+  is a checked no-op because the stub has no argument ingress; map-load
+  profiling is observational; checksum/restart/sound/database-thread tails are
+  abort-loud. CI now preserves full Xcode logs and inventories archive/app
+  symbols so future scaffold masking is reviewable.
+- Swift runs Wave 1 only after the retained M13 proof, crash-guards it, and
+  runs M14 only after the exact filesystem result. The proof file gains the
+  separately frozen `fs=` line; CI hard-asserts it without weakening the M13
+  or M14 assertions.
+
+**Errors found and addressed:** the expected five-object closure omitted
+`com_files`' direct stdio and minizip owners; `fileSysCheck.cfg` made an
+asset-free boot fatal; 32-bit pointer math remained in both filesystem and
+newly reached dvar/language paths; and the existing workflow discarded most
+linker output with `tail`. The candidate fixes those causes rather than adding
+a fake asset or relaxing an assertion. The seven-object set remains a static
+prediction until hosted linking confirms it.
+
+**Compiled/Ran?** **UNVERIFIED in hosted CI.** This workstation has no iOS or
+Windows compiler. Windows-available checks passed before the local commit:
+`git diff --check`, `bash -n` for the engine archive script, census count 34,
+exact marker greps, forbidden graduated-scaffold grep, and an explicit zero
+result for `jmp_buf`/`setjmp`/`longjmp` across all seven real Wave 1 TUs.
+
+**Required coordinator verdict before Wave 2:** push the local commit and
+require (1) census **34 PASS, 0 FAIL**, (2) simulator marker exactly
+`fs=FS_InitFilesystem OK — bundle base, Documents home, write/read/delete OK, no assets`
+while the exact M13/M14 lines remain present, (3) a green unsigned arm64 device
+IPA link containing the exact archive, and (4) Windows Debug/Release green.
+Any red result belongs to Wave 1; do not proceed around it. No COD4 asset was
+created, read, committed, or uploaded, and no physical-device claim is made.
+

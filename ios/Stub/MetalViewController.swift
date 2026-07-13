@@ -76,6 +76,10 @@ final class MetalViewController: UIViewController {
     // device (precursor to Com_Init). Guarded like the D3D9 smoke.
     private var bootStatus = "pending"
 
+    // Phase 3 Wave 1: real FS_InitFilesystem plus a Documents round trip.
+    private static let fsProofOK = "FS_InitFilesystem OK — bundle base, Documents home, write/read/delete OK, no assets"
+    private var fsStatus = "waiting for boot"
+
     // Real COD4 movement on the synthetic flat world. The immutable proof is
     // CI-gated; the live string carries thumbstick-driven origin/velocity.
     private static let pmoveProofOK = "real bg_pmove OK: walk+jump+land+friction on synthetic z=0"
@@ -223,12 +227,36 @@ final class MetalViewController: UIViewController {
             self.bootStatus = result
             NSLog("KISAK_BOOT_SMOKE %@", result)
             if result.hasPrefix("hunk OK") {
-                self.runPmoveProof()
+                self.runFSSmoke()
             } else {
+                self.fsStatus = "blocked by boot failure"
                 self.pmoveProofStatus = "blocked by boot failure"
             }
             self.writeFirstFrameMarker()
         }
+    }
+
+    private func runFSSmoke() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let sentinel = docs.appendingPathComponent("fs_attempt_in_flight")
+        let crashes = (try? String(contentsOf: sentinel, encoding: .utf8)).flatMap(Int.init) ?? 0
+        if crashes >= 3 {
+            fsStatus = "skipped — crashed \(crashes)x"
+            pmoveProofStatus = "blocked by filesystem crash guard"
+            return
+        }
+
+        try? "\(crashes + 1)".data(using: .utf8)!.write(to: sentinel)
+        let result = String(cString: kisak_fs_smoke())
+        try? FileManager.default.removeItem(at: sentinel)
+        fsStatus = result
+        NSLog("KISAK_FS_SMOKE %@", result)
+        if result == Self.fsProofOK {
+            runPmoveProof()
+        } else {
+            pmoveProofStatus = "blocked by filesystem failure"
+        }
+        writeFirstFrameMarker()
     }
 
     private func runPmoveProof() {
@@ -599,6 +627,7 @@ final class MetalViewController: UIViewController {
             engine: \(engineSmoke)
             d3d9: \(d3d9Status)
             boot: \(bootStatus)
+            filesystem: \(fsStatus)
             pmove proof: \(pmoveProofStatus)
             pmove live: \(pmoveLiveStatus)
             """
@@ -627,6 +656,7 @@ final class MetalViewController: UIViewController {
         engine=\(engineSmoke)
         d3d9=\(d3d9Status)
         boot=\(bootStatus)
+        fs=\(fsStatus)
         pmove=\(pmoveProofStatus)
         pmoveLive=\(pmoveLiveStatus)
         date=\(ISO8601DateFormatter().string(from: Date()))

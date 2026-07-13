@@ -45,7 +45,11 @@ char szErrorString[1024];
 
 void __cdecl TRACK_stringed_hooks()
 {
+#ifdef KISAK_IOS
+    track_static_alloc_internal(g_languages, sizeof(g_languages), "g_languages", 33);
+#else
     track_static_alloc_internal(g_languages, 120, "g_languages", 33);
+#endif
 }
 
 int __cdecl SEH_GetCurrentLanguage()

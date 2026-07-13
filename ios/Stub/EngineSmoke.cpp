@@ -51,6 +51,7 @@ void Com_PrintError(int channel, const char *fmt, ...)
 
 // (va() and Q_fabs are NOT stubbed here — q_shared.o / com_math.o define them.)
 void Com_Memset(void *dst, int val, unsigned long len) { memset(dst, val, len); }
+void Com_Memcpy(void *dst, const void *src, unsigned long len) { memcpy(dst, src, len); }
 bool Sys_IsMainThread() { return pthread_main_np() != 0; }
 int Sys_Milliseconds()
 {
