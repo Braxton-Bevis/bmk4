@@ -350,7 +350,8 @@ void Profile_Recover(int) BOOT_UNREACHED("Profile_Recover")
 void Profile_Unguard(int) BOOT_UNREACHED("Profile_Unguard")
 void SetAnimCheck(int) BOOT_UNREACHED("SetAnimCheck")
 void StatMon_Warning(int, int, const char *) BOOT_UNREACHED("StatMon_Warning")
-void getBuildNumber() BOOT_UNREACHED("getBuildNumber")
+// getBuildNumber graduated: real owner src/buildnumber.cpp joined the census
+// after the M15 boot run reached it via Com_Init (37c2d4c crash evidence).
 
 // Client/UI/input owners: later client and renderer-content waves.
 void CL_CharEvent(int, int) BOOT_UNREACHED("CL_CharEvent")

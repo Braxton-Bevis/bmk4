@@ -14,6 +14,13 @@ cd "$ROOT"
 
 FILES=$(sed -n 's/^ *"\${SRC_DIR}\/\(.*\)".*$/src\/\1/p' scripts/ios/CMakeLists.txt)
 
+# src/buildnumber.h is generated (gitignored); the Windows build makes it via
+# the update_build_number custom target. Mirror that here so buildnumber.cpp
+# compiles. Commit count keeps the number deterministic per checkout.
+if [ ! -f src/buildnumber.h ]; then
+  bash scripts/increment_build.sh src "$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+fi
+
 build_one_sdk() {
   local sdk=$1 target=$2
   local SDKPATH; SDKPATH=$(xcrun --sdk "$sdk" --show-sdk-path)
@@ -87,6 +94,7 @@ build_one_sdk() {
     src_qcommon_common.cpp.o
     src_stringed_stringed_hooks.cpp.o
     src_stringed_stringed_ingame.cpp.o
+    src_buildnumber.cpp.o
   )
   for leaf in "${cominit_members[@]}"; do
     if [ -f "$OBJDIR/$leaf" ]; then

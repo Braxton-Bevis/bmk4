@@ -18,16 +18,20 @@ jobs:
   simulator-launch-proof:
     runs-on: macos-15
     timeout-minutes: 30
+    continue-on-error: ${{ github.ref == 'refs/heads/staging' }}
     steps:
-      - uses: actions/checkout@v4
+      - id: checkout
+        uses: actions/checkout@v4
 
       - name: Toolchain versions
+        id: toolchain
         run: |
           sw_vers
           xcodebuild -version
           xcrun simctl list runtimes
 
       - name: Build engine archives (census + smoke + pmove + Com_Init wave)
+        id: build_archives
         run: |
           set -euxo pipefail
           git clone --depth 1 --branch v2.7.1 --recurse-submodules=include/native/directx --shallow-submodules \
@@ -39,13 +43,16 @@ jobs:
           ./scripts/platform/ios/build-engine-lib.sh "$PWD/dxvk-headers/include/native" iphonesimulator
 
       - name: Install XcodeGen
+        id: install_xcodegen
         run: brew install xcodegen
 
       - name: Generate Xcode project
+        id: generate_project
         working-directory: ios
         run: xcodegen generate
 
       - name: Build (iphonesimulator)
+        id: build_sim
         working-directory: ios
         run: |
           set -o pipefail
@@ -60,6 +67,7 @@ jobs:
             build | tee ../proof/xcodebuild-simulator.log
 
       - name: Record Phase 3 archive and scaffold ownership
+        id: record_phase3
         working-directory: ios
         run: |
           set -euxo pipefail
@@ -98,6 +106,7 @@ jobs:
             Stub/BootScaffold.cpp
 
       - name: Boot simulator, install, launch, capture proof
+        id: launch_proof
         run: |
           set -euxo pipefail
           APP_BUNDLE_ID=dev.braxton.kisakstub
@@ -165,12 +174,51 @@ jobs:
           grep -Fqx 'fs=FS_InitFilesystem OK — bundle base, Documents home, write/read/delete OK, no assets' proof/metal_first_frame.txt
           grep -Fqx 'pmove=real bg_pmove OK: walk+jump+land+friction on synthetic z=0' proof/metal_first_frame.txt
 
-      - uses: actions/upload-artifact@v4
+      - id: upload_proof
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: simulator-launch-proof
           path: proof/
           retention-days: 14
+
+      - name: Verdict for coordinator
+        if: github.ref == 'refs/heads/staging' && always()
+        env:
+          OUTCOME_CHECKOUT: ${{ steps.checkout.outcome }}
+          OUTCOME_TOOLCHAIN: ${{ steps.toolchain.outcome }}
+          OUTCOME_BUILD_ARCHIVES: ${{ steps.build_archives.outcome }}
+          OUTCOME_INSTALL_XCODEGEN: ${{ steps.install_xcodegen.outcome }}
+          OUTCOME_GENERATE_PROJECT: ${{ steps.generate_project.outcome }}
+          OUTCOME_BUILD_SIM: ${{ steps.build_sim.outcome }}
+          OUTCOME_RECORD_PHASE3: ${{ steps.record_phase3.outcome }}
+          OUTCOME_LAUNCH_PROOF: ${{ steps.launch_proof.outcome }}
+          OUTCOME_UPLOAD_PROOF: ${{ steps.upload_proof.outcome }}
+        run: |
+          checks=(
+            "$OUTCOME_CHECKOUT|Checkout repository"
+            "$OUTCOME_TOOLCHAIN|Toolchain versions"
+            "$OUTCOME_BUILD_ARCHIVES|Build engine archives (census + smoke + pmove + Com_Init wave)"
+            "$OUTCOME_INSTALL_XCODEGEN|Install XcodeGen"
+            "$OUTCOME_GENERATE_PROJECT|Generate Xcode project"
+            "$OUTCOME_BUILD_SIM|Build (iphonesimulator)"
+            "$OUTCOME_RECORD_PHASE3|Record Phase 3 archive and scaffold ownership"
+            "$OUTCOME_LAUNCH_PROOF|Boot simulator, install, launch, capture proof"
+            "$OUTCOME_UPLOAD_PROOF|Upload simulator launch proof"
+          )
+
+          verdict='BMK4_VERDICT=green'
+          for check in "${checks[@]}"; do
+            outcome=${check%%|*}
+            step=${check#*|}
+            if [[ "$outcome" != success ]]; then
+              verdict="BMK4_VERDICT=red step=$step"
+              break
+            fi
+          done
+
+          echo "$verdict"
+          echo "$verdict" >> "$GITHUB_STEP_SUMMARY"
 
   # Job 2: build the real arm64 device binary (unsigned) and package it as an
   # .ipa. Signing is the human last-mile: Sideloadly on Windows or Xcode on Mac
@@ -178,10 +226,13 @@ jobs:
   device-ipa-unsigned:
     runs-on: macos-15
     timeout-minutes: 30
+    continue-on-error: ${{ github.ref == 'refs/heads/staging' }}
     steps:
-      - uses: actions/checkout@v4
+      - id: checkout
+        uses: actions/checkout@v4
 
       - name: Build renderer + engine archives
+        id: build_renderer
         run: |
           set -euxo pipefail
           brew install meson ninja glslang
@@ -210,13 +261,16 @@ jobs:
             "$PWD/dxvk-ios-work/dxvk/include/native" iphoneos
 
       - name: Install XcodeGen
+        id: install_xcodegen
         run: brew install xcodegen
 
       - name: Generate Xcode project
+        id: generate_project
         working-directory: ios
         run: xcodegen generate
 
       - name: Build (iphoneos, unsigned)
+        id: build_device
         working-directory: ios
         run: |
           set -o pipefail
@@ -230,6 +284,7 @@ jobs:
             build | tee xcodebuild-device.log
 
       - name: Verify binary is arm64-apple-ios and package IPA
+        id: package_ipa
         working-directory: ios
         run: |
           set -euxo pipefail
@@ -240,10 +295,45 @@ jobs:
           cp -R "$APP" Payload/
           zip -qry KisakStub-unsigned.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+      - id: upload_ipa
+        uses: actions/upload-artifact@v4
         with:
           name: KisakStub-unsigned-ipa
           path: |
             ios/KisakStub-unsigned.ipa
             ios/xcodebuild-device.log
           retention-days: 14
+
+      - name: Verdict for coordinator
+        if: github.ref == 'refs/heads/staging' && always()
+        env:
+          OUTCOME_CHECKOUT: ${{ steps.checkout.outcome }}
+          OUTCOME_BUILD_RENDERER: ${{ steps.build_renderer.outcome }}
+          OUTCOME_INSTALL_XCODEGEN: ${{ steps.install_xcodegen.outcome }}
+          OUTCOME_GENERATE_PROJECT: ${{ steps.generate_project.outcome }}
+          OUTCOME_BUILD_DEVICE: ${{ steps.build_device.outcome }}
+          OUTCOME_PACKAGE_IPA: ${{ steps.package_ipa.outcome }}
+          OUTCOME_UPLOAD_IPA: ${{ steps.upload_ipa.outcome }}
+        run: |
+          checks=(
+            "$OUTCOME_CHECKOUT|Checkout repository"
+            "$OUTCOME_BUILD_RENDERER|Build renderer + engine archives"
+            "$OUTCOME_INSTALL_XCODEGEN|Install XcodeGen"
+            "$OUTCOME_GENERATE_PROJECT|Generate Xcode project"
+            "$OUTCOME_BUILD_DEVICE|Build (iphoneos, unsigned)"
+            "$OUTCOME_PACKAGE_IPA|Verify binary is arm64-apple-ios and package IPA"
+            "$OUTCOME_UPLOAD_IPA|Upload unsigned IPA"
+          )
+
+          verdict='BMK4_VERDICT=green'
+          for check in "${checks[@]}"; do
+            outcome=${check%%|*}
+            step=${check#*|}
+            if [[ "$outcome" != success ]]; then
+              verdict="BMK4_VERDICT=red step=$step"
+              break
+            fi
+          done
+
+          echo "$verdict"
+          echo "$verdict" >> "$GITHUB_STEP_SUMMARY"

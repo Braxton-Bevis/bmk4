@@ -51,6 +51,22 @@ hypotheses before changing engine behavior:
 | 2 | **The nominally empty startup line reaches a deferred dvar-command boundary.** `Com_ParseCommandLine` deliberately creates one console line even for `""` (`common.cpp:839-851`), and `Com_StartupVariable(0)` tokenizes it at `common.cpp:1359`. Any unexpected retained `set`/`seta` token would call the B4-deferred abort-loud `Dvar_Set_f`/`Dvar_SetA_f` owners. | `app-console.txt` names `Dvar_Set_f(B4 dvar_cmds owner)` or `Dvar_SetA_f(B4 dvar_cmds owner)`; normal engine prints followed by neither name refute this path. |
 | 3 | **A real early failure is being masked by the post-fence recovery scaffolds.** The most direct trigger is the 512 MiB headless hunk reservation (`com_memory.cpp:390-407`), whose failure reaches abort-loud `Sys_OutOfMemErrorInternal`; another `Com_Error` trigger longjmps to `Com_Init`, whose real-minimal `Sys_Error` aborts. If recovery inspects the intentionally poisoned `cls`, it can instead expose `CL_ConsoleFixPosition`/UI aborts and hide the originating error. | First use the `.ips` faulting frame and the last console line: `Sys_OutOfMemErrorInternal`, `Sys_Error: Error during initialization`, or a named client/UI scaffold settles the terminal path; the preceding engine error text identifies the original trigger. |
 
+### ADJUDICATED (run `29354619117`, commit `37c2d4c`)
+
+The diagnostics run settled it: **none of the three hypotheses**. The captured
+`app-console.txt` shows the preflight, spine, and 3-stage probe markers, then
+`----- FS_Startup -----`, `Current language: english`, and the terminal line
+`boot scaffold reached unexpected dependency: getBuildNumber`. The boot
+progressed past the B2 boundary into the FS bring-up; the first `Com_Printf`
+after the console log opened called `getBuildNumber()` (`common.cpp:522`),
+whose owner was still a `BOOT_UNREACHED` scaffold. Fix: `src/buildnumber.cpp`
+graduated into the census (TU #36) and the `libkisakcominit.a` member list;
+`buildnumber.h` is generated in the iOS lanes via `increment_build.sh` (it is
+gitignored and Windows-generated otherwise); the scaffold was deleted. Note
+hypothesis 3's 512 MiB reservation was NOT reached-and-refused — the trip
+happened before any large hunk commit. Expect further one-symbol-per-run
+scaffold trips on this path; each is the wave mechanism working, not a defect.
+
 ## Verified state
 
 - M14 implementation commit `aec0ab9` runs COD4's real `Pmove` against an

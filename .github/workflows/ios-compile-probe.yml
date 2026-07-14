@@ -66,6 +66,9 @@ jobs:
           DXDIR=dxvk-headers/include/native/directx
           WINDIR=dxvk-headers/include/native/windows
           FILES=$(sed -n 's/^ *"\${SRC_DIR}\/\(.*\)".*$/src\/\1/p' scripts/ios/CMakeLists.txt)
+          # Generated header (gitignored) needed by src/buildnumber.cpp; the
+          # shallow checkout makes the count 1, which is fine — cosmetic only.
+          bash scripts/increment_build.sh src "$(git rev-list --count HEAD 2>/dev/null || echo 0)"
           mkdir -p census/logs
           echo -e "file\tstatus\tfirst_error" > census/census.tsv
           for f in $FILES; do
@@ -88,7 +91,7 @@ jobs:
           pass=$(awk -F '\t' 'NR > 1 && $2 == "PASS" { n++ } END { print n + 0 }' census/census.tsv)
           fail=$(awk -F '\t' 'NR > 1 && $2 == "FAIL" { n++ } END { print n + 0 }' census/census.tsv)
           echo "CENSUS_TOTAL=$total PASS=$pass FAIL=$fail"
-          test "$total" -ge 34
+          test "$total" -ge 36
           test "$pass" -eq "$total"
           test "$fail" -eq 0
 
