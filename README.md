@@ -47,18 +47,9 @@ There is no macOS/Linux/ARM branch to start from. The engine assumes Windows API
 | Real player-movement sandbox | ✅ simulator-proven walk + jump + land + friction on a synthetic flat world; thumbstick/HUD live, physical-iPad feel test pending |
 | win32 build unaffected by all of the above | ✅ full engine builds green (Debug + Release) |
 
-### Remaining before the game runs
-
-| Objective | Status |
-|---|---|
-| Headless `Com_Init`: full engine boot with no game data | 🟡 in progress — real `Com_Init` entered on a cold path; client/server tails being fenced ([roadmap](docs/ROADMAP_TO_PLAYABLE.md)) |
-| Fastfile deserialization: translate 32-bit serialized asset structs for 64-bit loading | ⬜ largest remaining task — staged plan in [FASTFILE_PLAN.md](docs/FASTFILE_PLAN.md), tooling evaluation in [OAT_EVALUATION.md](docs/OAT_EVALUATION.md) |
-| Renderer content path: `R_Init` end to end, materials/shaders from real zones | ⬜ blocked on fastfiles; shader path is precompiled bytecode, no runtime D3DX needed ([notes](docs/knowledge/RENDERER_INIT_NOTES.md)) |
-| Input: touch/controller events into the engine event queue | ⬜ menu-navigation subset first |
-| Full client link: cgame/ui/client translation units, zero undefined symbols | ⬜ heaviest remaining census work (73 inline-asm sites) |
-| Real game data on device: menu renders from user-owned COD4 files | ⬜ files stay on the user's devices; never in this repo or CI |
-| A playable match: spawn, move, shoot in mp_killhouse | ⬜ |
-| Audio, Bink video, frame pacing, persistence | ⬜ deferred until after first playable |
+The full done/remaining checklist is in
+[Path to a complete working game](#path-to-a-complete-working-game); the execution order is the
+ten-slice plan in [docs/reviews/roadmap-sol.md](docs/reviews/roadmap-sol.md).
 
 ## DXVK's D3D9 frontend on physical iPadOS
 
@@ -200,19 +191,21 @@ Everything between today's state and *playing Call of Duty 4 on an iPad*, in
 dependency order. Checked items are machine-verified in CI or on device.
 
 - [x] **Toolchain + app shell** — Metal render loop, settings, controllers, signing, device installs
-- [x] **Engine compiles for iOS** — 30/30 census TUs (including the real pmove/jump/slide/mantle closure and `Com_Init`'s own TU)
+- [x] **Engine compiles for iOS** — 35/35 census TUs (pmove/jump/slide/mantle closure, the real filesystem, `common.cpp`, `Com_Init`'s own TU)
 - [x] **Renderer runtime** — D3D9→DXVK→Vulkan→MoltenVK→Metal live on device (Clear/readback/Present verified pixel-exact, journal M12)
 - [x] **First engine code executing on device** — math/bit-packing/string smoke, exact expected values
-- [x] **Engine subsystems boot in simulator** — real memory/dvar/command staged init, 74/74 closure, behavioral marker (journal M13)
-- [ ] **Physical-device M13 proof** — install the verified arm64 build and pull the same hunk/dvar/cmd marker from the iPad
+- [x] **Engine subsystems boot in simulator** — real memory/dvar/command cold-start init, behavioral markers (journal M13)
 - [x] **Player movement sandbox** — real `bg_pmove` walks, jumps, lands, and stops on a synthetic world; exact simulator proof plus thumbstick/HUD wiring (journal M14)
-- [ ] **Physical-device M14 feel test** — pull the exact pmove marker from the iPad, then exercise left-stick movement, A jump, and B sprint
-- [ ] **Headless `Com_Init`** — full boot-path link closure (~700 symbols across remaining TUs), filesystem rooted in the app bundle
-- [ ] **THE FASTFILE WALL** — 64-bit translation of every serialized asset struct so real game data loads; staged plan is in `docs/FASTFILE_PLAN.md` (the relaxed layout asserts double as a machine-checkable 32-bit layout spec). *The dominant remaining cost.*
-- [ ] **Renderer content-readiness** — DXVK dummy-resources for the Apple null-descriptor gap (scoped, journal M12 addendum); engine `dx.d3d9` init through `Sys_iOS_GetHostWindow()`
-- [ ] **Input & audio** — GCController/touch → `Sys_QueEvent`; AVAudioEngine behind the landed `AIL_*` stub surface
-- [ ] **Game data** — user-supplied COD4 (2007) files into `Documents/` (never shipped with this repo); asset name case-normalization for APFS
-- [ ] **A match runs** — map loads, player spawns, walks, shoots
+- [x] **Real filesystem on iOS** — `FS_InitFilesystem` under an explicit headless policy; engine write/read/delete round trip (Phase 3 Wave 1)
+- [ ] **Headless `Com_Init`** — real `Com_Init` entered on a cold path (in progress); remaining: net/msg loopback, the event-loop probe, the M15 marker
+- [ ] **Windows asset oracle** — dump modes on the Windows build; evidence run against the five inventoried boot zones plus `mp_killhouse.ff` (local only, never in CI)
+- [ ] **Layout-map generation** — per-struct 32-bit offset/size/pointer tables; OAT generator extension is spike-gated with a KisakCOD-header fallback
+- [ ] **Fastfile translation kernel** — inflate/staging/32→64 fills proven on synthetic zones against the oracle. *The dominant remaining cost.*
+- [ ] **Oracle-derived asset waves + renderer integration** — only the observed boot/map closure; `R_Init` and the DXVK dummy-resource fix land with the first material wave
+- [ ] **`mp_killhouse` direct-client closure** — link and run only the TUs a direct map start reaches; map zone loads, client snapshot, cgame renders
+- [ ] **Physical-device proofs, batched** — M13/M14 markers plus the real-fastfile load, one Sideloadly sitting
+- [ ] **THE ARTIFACT** — game data into `Documents/` (never in this repo), direct launch into `mp_killhouse` on the iPad, screenshot posted here
+- [ ] **After first playable** — audio (AVAudioEngine behind `AIL_*`), Bink, menus/UI breadth, full input binds, frame pacing, persistence
 
 ## Roadmap
 
