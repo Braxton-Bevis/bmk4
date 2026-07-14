@@ -144,6 +144,12 @@ jobs:
             throw "FF0a dump did not contain exactly three targeted field hashes"
           }
 
+          # The refusal tests WANT stderr output + nonzero exit; under the runner's
+          # ErrorActionPreference=Stop, PS 5.1 wraps native stderr in a terminating
+          # NativeCommandError before the exit-code checks run. Relax EAP for just
+          # these invocations; the explicit exit-code assertions still enforce.
+          $savedEap = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
           $outsideFixture = Join-Path $env:RUNNER_TEMP "bmk4-outside-minimal-empty.ff"
           Copy-Item $fixture $outsideFixture -Force
           & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $outsideFixture --output (Join-Path $outputDir "refused-input.txt") 2>$null
@@ -153,6 +159,7 @@ jobs:
           & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $outsideOutput 2>$null
           if ($LASTEXITCODE -ne 3) { throw "outside output was not refused with exit code 3" }
           if (Test-Path $outsideOutput) { throw "refused outside output was created" }
+          $ErrorActionPreference = $savedEap
 
       - uses: actions/upload-artifact@v4
         with:
