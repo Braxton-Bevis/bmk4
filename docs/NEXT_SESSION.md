@@ -257,3 +257,25 @@ link/runtime proof is still required before that replacement is accepted.
 - Do not put COD4 assets in Git, CI, artifacts, or logs.
 - Branding is BMK4; preserve KisakCOD/LWSS GPL-3.0 credit and bundle ID
   `dev.braxton.kisakstub`.
+
+## 2026-07-14 ratified ordering override and FF0a checkpoint
+
+`docs/reviews/roadmap-claude-response.md` ratifies the ten-slice order in
+`docs/reviews/roadmap-sol.md`, with amendments A1-A4. It supersedes the stale
+“After Phase 3” ordering above: FF0a Slice 1, then the private real-zone Slice
+2, then B3 → B4 → B5. The OAT conformance spike runs independently on lane 2
+and must converge before Slice 7. The frozen acceptance artifact is a physical-
+iPad `mp_killhouse` frame, not the main menu.
+
+Lane 1 has implemented FF0a Slice 1 locally: a Windows-only
+`bmk4-ff-oracle` target, generated empty IW3 fixture, canonical v1 structural
+dump, byte-stability assertions, canonical repo-root input/output allowlisting,
+and a fixture-output-only artifact glob. Hosted compilation and runtime remain
+**UNVERIFIED**. Require Debug/Release tool builds, exact schema/hash assertions,
+identical dump hashes, and both outside-root refusal tests before Slice 1 is
+green. The coordinator's separate B2 fix at staging `f6ffe33` was still running
+when this checkpoint was written; any red verdict there preempts Slice 2.
+
+After both gates are green, Slice 2 runs the oracle locally against the five
+inventory-confirmed MP boot zones plus `mp_killhouse.ff`. Raw reports stay out
+of git/CI/artifacts; only a sanitized structural closure report may land.

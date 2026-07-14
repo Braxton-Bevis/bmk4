@@ -30,6 +30,11 @@ jobs:
         with:
           dotnet-version: '8.x'
 
+      - name: Install Python (synthetic FF0a fixture generator)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Restore DXSDK NuGet package
         run: |
           dotnet new classlib -o dxsdk-temp
@@ -71,7 +76,83 @@ jobs:
           cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "KisakCOD-sp"
           cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "KisakCOD-mp"
           cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "KisakCOD-dedi"
+          cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "bmk4-ff-oracle"
           popd
+
+      - name: FF0a synthetic dump, byte-stability, and fixture allowlist gate
+        shell: powershell
+        run: |
+          $fixtureDir = Join-Path "${{ github.workspace }}" "build-${{ matrix.config }}\ff-oracle-fixtures"
+          $outputDir = Join-Path "${{ github.workspace }}" "build-${{ matrix.config }}\ff-oracle-out"
+          New-Item -ItemType Directory -Force $fixtureDir, $outputDir | Out-Null
+
+          $fixture = Join-Path $fixtureDir "minimal-empty.ff"
+          python tools/ff_oracle/generate_minimal_fixture.py --output $fixture
+
+          $tool = Join-Path "${{ github.workspace }}" "bin\${{ matrix.config }}\bmk4-ff-oracle.exe"
+          $dumpA = Join-Path $outputDir "minimal-empty-a.txt"
+          $dumpB = Join-Path $outputDir "minimal-empty-b.txt"
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $dumpA
+          if ($LASTEXITCODE -ne 0) { throw "first FF0a dump failed with exit code $LASTEXITCODE" }
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $dumpB
+          if ($LASTEXITCODE -ne 0) { throw "second FF0a dump failed with exit code $LASTEXITCODE" }
+
+          $hashA = (Get-FileHash -Algorithm SHA256 $dumpA).Hash.ToLowerInvariant()
+          $hashB = (Get-FileHash -Algorithm SHA256 $dumpB).Hash.ToLowerInvariant()
+          if ($hashA -cne $hashB) { throw "FF0a dump is not byte-stable: $hashA != $hashB" }
+          Set-Content -Path (Join-Path $outputDir "minimal-empty.sha256") -Value $hashA
+
+          $actualLines = Get-Content $dumpA
+          $requiredLines = @(
+            "schema=bmk4.ff-oracle.v1",
+            "container.magic=IWffu100",
+            "container.version=5",
+            "container.secure=0",
+            "container.decompressed_bytes=60",
+            "xfile.size=0",
+            "xfile.external_size=0",
+            "blocks.count=9",
+            "assets.total=0",
+            "asset_type_counts.observed=1",
+            "asset_type_counts.count=0",
+            "script_strings.count=0",
+            "script_strings.metadata_hash.fnv1a64=a8c7f832281a39c5",
+            "delayed_records.observed=1",
+            "delayed_records.count=0",
+            "delayed_records.bytes=0",
+            "external_references.observed=1",
+            "external_references.declared_bytes=0",
+            "external_references.count=0",
+            "targeted_hash.xfile.fnv1a64=6b54ea71af95ef15",
+            "targeted_hash.asset_list.fnv1a64=88201fb960ff6465",
+            "targeted_hash.decompressed_payload.fnv1a64=f87b38c6cf34ac55",
+            "runtime_observation.complete=1"
+          )
+          foreach ($line in $requiredLines) {
+            if ($actualLines -cnotcontains $line) { throw "FF0a dump missing required line: $line" }
+          }
+          $blockNames = @("temp", "runtime", "large_runtime", "physical_runtime", "virtual", "large", "physical", "vertex", "index")
+          for ($index = 0; $index -lt $blockNames.Count; $index++) {
+            if ($actualLines -cnotcontains "block[$index].name=$($blockNames[$index])") {
+              throw "FF0a dump missing canonical name for block $index"
+            }
+            if ($actualLines -cnotcontains "block[$index].bytes=0") {
+              throw "FF0a dump missing zero size for block $index"
+            }
+          }
+          if (($actualLines | Where-Object { $_ -like "targeted_hash.*.fnv1a64=*" }).Count -ne 3) {
+            throw "FF0a dump did not contain exactly three targeted field hashes"
+          }
+
+          $outsideFixture = Join-Path $env:RUNNER_TEMP "bmk4-outside-minimal-empty.ff"
+          Copy-Item $fixture $outsideFixture -Force
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $outsideFixture --output (Join-Path $outputDir "refused-input.txt") 2>$null
+          if ($LASTEXITCODE -ne 3) { throw "outside input was not refused with exit code 3" }
+
+          $outsideOutput = Join-Path $env:RUNNER_TEMP "bmk4-outside-dump.txt"
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $outsideOutput 2>$null
+          if ($LASTEXITCODE -ne 3) { throw "outside output was not refused with exit code 3" }
+          if (Test-Path $outsideOutput) { throw "refused outside output was created" }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,3 +160,24 @@ jobs:
           path: ${{ github.workspace }}/bin
           compression-level: 9
           retention-days: 1
+
+      - name: Upload FF0a synthetic oracle dump only
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-oracle-${{ matrix.config }}
+          path: ${{ github.workspace }}/build-${{ matrix.config }}/ff-oracle-out/**
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 7
+
+      # The tool binary itself (BMK4 GPL code, no game data) - the Windows
+      # coordination seat has no local compiler and runs slice-2 real-zone
+      # evidence locally with this exe; raw real-zone dumps never leave that
+      # machine.
+      - name: Upload FF0a oracle tool binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-oracle-tool-${{ matrix.config }}
+          path: ${{ github.workspace }}/bin/${{ matrix.config }}/bmk4-ff-oracle.exe
+          if-no-files-found: error
+          retention-days: 7

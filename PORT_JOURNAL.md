@@ -962,3 +962,42 @@ contains the unchanged B1/M13/FS/M14 lines plus exact B2
 `cominit-spine=Com_Init entered — useFastFile=0, dedicated=2, sv/cl tails fenced`.
 Any runtime abort must report its named scaffold and stays inside B2.
 
+## FF0a Slice 1 — safe Windows oracle instrument (2026-07-14, Windows seat; CI UNVERIFIED)
+
+**Attempted:** the first ratified screenshot-roadmap slice: establish a
+content-safe Windows oracle shell and synthetic evidence gate before using the
+now-available retail zones. Cross-review amendment A4 requires an explicit CI
+fixture allowlist plus an artifact glob confined to the fixture output
+directory.
+
+**Change:** added the non-shipping `bmk4-ff-oracle` CMake target. It parses the
+real unsigned IW3 `IWffu100`/version-5 prefix, inflates with the repository's
+zlib 1.1.4 sources, reads the 44-byte `XFile` and 16-byte `XAssetList`, and
+emits an address-free `bmk4.ff-oracle.v1` report. The checked-in Python
+generator constructs an empty valid container from zero-valued records; no
+opaque fixture and no game-derived bytes are stored. The schema covers all
+nine block sizes, asset total/type-count observation state, script-string
+metadata, delayed-record observation state, external-byte/reference state, and
+three deterministic FNV-1a field hashes. Runtime-only sections carry explicit
+`observed` bits: the empty fixture earns zero; a non-empty zone cannot silently
+turn “not observed yet” into a zero result.
+
+**Safety gate:** CI invokes `--fixture-allowlist-root` and proves both an input
+outside the canonical repo root and an output outside it are refused with exit
+3 before output creation. The upload action globs only
+`build-<config>/ff-oracle-out/**`. Each Windows configuration generates the
+fixture, produces two dumps, requires byte-identical SHA256 values, asserts the
+exact schema/hash lines, and uploads only those dumps and their digest.
+
+**Compiled/ran?** UNVERIFIED. This workstation has no compiler, and its Python
+launcher is unavailable in the sandbox (`python.exe`: logon session does not
+exist). Static inspection, the independently calculated zero-record FNV values,
+and diff checks are available locally; hosted Debug/Release builds and the
+fixture/refusal runtime step are required evidence.
+
+**Required coordinator verdict:** both Windows Debug and Release build all
+three existing products plus `bmk4-ff-oracle`; both FF0a steps pass; uploaded
+`ff-oracle-Debug` and `ff-oracle-Release` contain only the two identical dump
+files and SHA256 file under the allowlisted output tree; exact schema lines and
+the two refusal tests pass. Any B2 red still preempts Slice 2.
+
