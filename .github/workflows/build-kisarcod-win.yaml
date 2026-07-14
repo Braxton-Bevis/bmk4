@@ -11,6 +11,7 @@ jobs:
   build:
     name: Build with DirectX SDK
     runs-on: windows-2022
+    continue-on-error: ${{ github.ref == 'refs/heads/staging' }}
 
     strategy:
       matrix:
@@ -23,14 +24,23 @@ jobs:
 
     steps:
       - name: Checkout repository
+        id: checkout
         uses: actions/checkout@v4
 
       - name: Install .NET SDK (for nuget usage)
+        id: setup_dotnet
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.x'
 
+      - name: Install Python (synthetic FF0a fixture generator)
+        id: setup_python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Restore DXSDK NuGet package
+        id: restore_dxsdk
         run: |
           dotnet new classlib -o dxsdk-temp
           cd dxsdk-temp
@@ -55,9 +65,11 @@ jobs:
           Write-Host $sdkDir
 
       - name: Install latest CMake
+        id: install_cmake
         uses: lukka/get-cmake@latest
 
       - name: Configure CMake ${{ matrix.config }}
+        id: configure
         run: |
           pushd
           mkdir build-${{ matrix.config }}
@@ -66,16 +78,203 @@ jobs:
           popd
 
       - name: Build ${{ matrix.config }}
+        id: build_targets
         run: |
           pushd
           cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "KisakCOD-sp"
           cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "KisakCOD-mp"
           cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "KisakCOD-dedi"
+          cmake --build build-${{ matrix.config }} --config ${{ matrix.config }} --target "bmk4-ff-oracle"
           popd
 
-      - uses: actions/upload-artifact@v4
+      - name: FF0a synthetic dump, byte-stability, and fixture allowlist gate
+        id: ff0a_gate
+        shell: powershell
+        run: |
+          $fixtureDir = Join-Path "${{ github.workspace }}" "build-${{ matrix.config }}\ff-oracle-fixtures"
+          $outputDir = Join-Path "${{ github.workspace }}" "build-${{ matrix.config }}\ff-oracle-out"
+          New-Item -ItemType Directory -Force $fixtureDir, $outputDir | Out-Null
+
+          $fixture = Join-Path $fixtureDir "minimal-empty.ff"
+          python tools/ff_oracle/generate_minimal_fixture.py --output $fixture
+
+          $tool = Join-Path "${{ github.workspace }}" "bin\${{ matrix.config }}\bmk4-ff-oracle.exe"
+          $dumpA = Join-Path $outputDir "minimal-empty-a.txt"
+          $dumpB = Join-Path $outputDir "minimal-empty-b.txt"
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $dumpA
+          if ($LASTEXITCODE -ne 0) { throw "first FF0a dump failed with exit code $LASTEXITCODE" }
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $dumpB
+          if ($LASTEXITCODE -ne 0) { throw "second FF0a dump failed with exit code $LASTEXITCODE" }
+
+          $hashA = (Get-FileHash -Algorithm SHA256 $dumpA).Hash.ToLowerInvariant()
+          $hashB = (Get-FileHash -Algorithm SHA256 $dumpB).Hash.ToLowerInvariant()
+          if ($hashA -cne $hashB) { throw "FF0a dump is not byte-stable: $hashA != $hashB" }
+          Set-Content -Path (Join-Path $outputDir "minimal-empty.sha256") -Value $hashA
+
+          $actualLines = Get-Content $dumpA
+          $requiredLines = @(
+            "schema=bmk4.ff-oracle.v1",
+            "container.magic=IWffu100",
+            "container.version=5",
+            "container.secure=0",
+            "container.decompressed_bytes=60",
+            "xfile.size=0",
+            "xfile.external_size=0",
+            "blocks.count=9",
+            "assets.total=0",
+            "asset_type_counts.observed=1",
+            "asset_type_counts.count=0",
+            "script_strings.count=0",
+            "script_strings.metadata_hash.fnv1a64=a8c7f832281a39c5",
+            "delayed_records.observed=1",
+            "delayed_records.count=0",
+            "delayed_records.bytes=0",
+            "external_references.observed=1",
+            "external_references.declared_bytes=0",
+            "external_references.count=0",
+            "targeted_hash.xfile.fnv1a64=6b54ea71af95ef15",
+            "targeted_hash.asset_list.fnv1a64=88201fb960ff6465",
+            "targeted_hash.decompressed_payload.fnv1a64=f87b38c6cf34ac55",
+            "runtime_observation.complete=1"
+          )
+          foreach ($line in $requiredLines) {
+            if ($actualLines -cnotcontains $line) { throw "FF0a dump missing required line: $line" }
+          }
+          $blockNames = @("temp", "runtime", "large_runtime", "physical_runtime", "virtual", "large", "physical", "vertex", "index")
+          for ($index = 0; $index -lt $blockNames.Count; $index++) {
+            if ($actualLines -cnotcontains "block[$index].name=$($blockNames[$index])") {
+              throw "FF0a dump missing canonical name for block $index"
+            }
+            if ($actualLines -cnotcontains "block[$index].bytes=0") {
+              throw "FF0a dump missing zero size for block $index"
+            }
+          }
+          if (($actualLines | Where-Object { $_ -like "targeted_hash.*.fnv1a64=*" }).Count -ne 3) {
+            throw "FF0a dump did not contain exactly three targeted field hashes"
+          }
+
+          # The refusal tests WANT stderr output + nonzero exit; under the runner's
+          # ErrorActionPreference=Stop, PS 5.1 wraps native stderr in a terminating
+          # NativeCommandError before the exit-code checks run. Relax EAP for just
+          # these invocations; the explicit exit-code assertions still enforce.
+          $savedEap = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          $outsideFixture = Join-Path $env:RUNNER_TEMP "bmk4-outside-minimal-empty.ff"
+          Copy-Item $fixture $outsideFixture -Force
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $outsideFixture --output (Join-Path $outputDir "refused-input.txt") 2>$null
+          if ($LASTEXITCODE -ne 3) { throw "outside input was not refused with exit code 3" }
+
+          $outsideOutput = Join-Path $env:RUNNER_TEMP "bmk4-outside-dump.txt"
+          & $tool --fixture-allowlist-root "${{ github.workspace }}" --input $fixture --output $outsideOutput 2>$null
+          if ($LASTEXITCODE -ne 3) { throw "outside output was not refused with exit code 3" }
+          if (Test-Path $outsideOutput) { throw "refused outside output was created" }
+          $ErrorActionPreference = $savedEap
+          # The wrapper ends the step with `exit $LASTEXITCODE`; the last native
+          # call above is the intentional exit-3 refusal. All assertions passed
+          # if we reached this line.
+          exit 0
+
+      - id: upload_binaries
+        uses: actions/upload-artifact@v4
         with:
           name: KisakCOD-${{ matrix.config }}
           path: ${{ github.workspace }}/bin
           compression-level: 9
           retention-days: 1
+
+      - name: Upload FF0a synthetic oracle dump only
+        id: upload_oracle_dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-oracle-${{ matrix.config }}
+          path: ${{ github.workspace }}/build-${{ matrix.config }}/ff-oracle-out/**
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 7
+
+      # The tool binary itself (BMK4 GPL code, no game data) - the Windows
+      # coordination seat has no local compiler and runs slice-2 real-zone
+      # evidence locally with this exe; raw real-zone dumps never leave that
+      # machine.
+      - name: Upload FF0a oracle tool binary
+        id: upload_oracle_tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff-oracle-tool-${{ matrix.config }}
+          path: ${{ github.workspace }}/bin/${{ matrix.config }}/bmk4-ff-oracle.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      # Slice 6 engine half: MSVC-derived KISAK layout manifests diffed against
+      # the OAT spike manifests. ADVISORY until the two known divergences
+      # (docs/LAYOUT_CONFORMANCE.md) are adjudicated with this step's numeric
+      # evidence; then it hardens into a fail-the-build gate. Always exits 0 so
+      # artifact uploads and slice-2 tooling are never blocked by a red here.
+      - name: Layout conformance (slice 6, advisory until adjudicated)
+        id: layout_conformance
+        shell: powershell
+        run: |
+          $line = ""
+          try {
+            & .\tools\layout_conformance\run-windows-ci.ps1 -Configuration ${{ matrix.config }} -DxSdkInclude "$env:incDir"
+            $line = "BMK4_LAYOUT_CONFORMANCE=green"
+          } catch {
+            $line = "BMK4_LAYOUT_CONFORMANCE=red detail=$($_.Exception.Message)"
+          }
+          Write-Host $line
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line
+          exit 0
+
+      - name: Upload layout conformance report
+        id: upload_layout_report
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-conformance-${{ matrix.config }}
+          path: |
+            ${{ github.workspace }}/build-layout-conformance-${{ matrix.config }}/layout-conformance-report.txt
+            ${{ github.workspace }}/build-layout-conformance-${{ matrix.config }}/run1/*.layout
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Verdict for coordinator
+        if: github.ref == 'refs/heads/staging' && always()
+        shell: powershell
+        env:
+          OUTCOME_CHECKOUT: ${{ steps.checkout.outcome }}
+          OUTCOME_SETUP_DOTNET: ${{ steps.setup_dotnet.outcome }}
+          OUTCOME_SETUP_PYTHON: ${{ steps.setup_python.outcome }}
+          OUTCOME_RESTORE_DXSDK: ${{ steps.restore_dxsdk.outcome }}
+          OUTCOME_EXTRACT_DXSDK: ${{ steps.dxsdk.outcome }}
+          OUTCOME_INSTALL_CMAKE: ${{ steps.install_cmake.outcome }}
+          OUTCOME_CONFIGURE: ${{ steps.configure.outcome }}
+          OUTCOME_BUILD_TARGETS: ${{ steps.build_targets.outcome }}
+          OUTCOME_FF0A_GATE: ${{ steps.ff0a_gate.outcome }}
+          OUTCOME_UPLOAD_BINARIES: ${{ steps.upload_binaries.outcome }}
+          OUTCOME_UPLOAD_ORACLE_DUMP: ${{ steps.upload_oracle_dump.outcome }}
+          OUTCOME_UPLOAD_ORACLE_TOOL: ${{ steps.upload_oracle_tool.outcome }}
+        run: |
+          $checks = @(
+            @($env:OUTCOME_CHECKOUT, "Checkout repository"),
+            @($env:OUTCOME_SETUP_DOTNET, "Install .NET SDK (for nuget usage)"),
+            @($env:OUTCOME_SETUP_PYTHON, "Install Python (synthetic FF0a fixture generator)"),
+            @($env:OUTCOME_RESTORE_DXSDK, "Restore DXSDK NuGet package"),
+            @($env:OUTCOME_EXTRACT_DXSDK, "Extract DXSDK paths from NuGet"),
+            @($env:OUTCOME_INSTALL_CMAKE, "Install latest CMake"),
+            @($env:OUTCOME_CONFIGURE, "Configure CMake ${{ matrix.config }}"),
+            @($env:OUTCOME_BUILD_TARGETS, "Build ${{ matrix.config }}"),
+            @($env:OUTCOME_FF0A_GATE, "FF0a synthetic dump, byte-stability, and fixture allowlist gate"),
+            @($env:OUTCOME_UPLOAD_BINARIES, "Upload KisakCOD binaries"),
+            @($env:OUTCOME_UPLOAD_ORACLE_DUMP, "Upload FF0a synthetic oracle dump only"),
+            @($env:OUTCOME_UPLOAD_ORACLE_TOOL, "Upload FF0a oracle tool binary")
+          )
+
+          $verdict = "BMK4_VERDICT=green"
+          foreach ($check in $checks) {
+            if ($check[0] -ne "success") {
+              $verdict = "BMK4_VERDICT=red step=$($check[1])"
+              break
+            }
+          }
+
+          Write-Host $verdict
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $verdict

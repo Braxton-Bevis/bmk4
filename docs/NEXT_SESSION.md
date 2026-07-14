@@ -1,29 +1,71 @@
-# NEXT_SESSION - BMK4 context handoff (2026-07-13, Wave 1 red-fix loop)
+# NEXT_SESSION - BMK4 context handoff (2026-07-14, Stage B2 runtime diagnostics)
 
 Read `FRONTIER_REPORT.md`, the latest `PORT_JOURNAL.md` entries,
 `docs/M14_PMOVE_SANDBOX_REPORT.md`, and `docs/FASTFILE_PLAN.md` before
 continuing. Re-reference this plan before each edit and refresh it whenever
 work pauses.
 
-## Active seat state — Wave 1 CRT red fix awaiting coordinator CI
+## Active seat state — Stage B2 119-symbol link closure
 
-- `origin/main` at `004a678` contains Wave 1 candidate `bdd14f0`, three
-  evidence-driven closure fixes, the playable roadmap, and staging-branch CI
-  triggers. The exact filesystem archive now contains eight real objects and
-  the monotonic census contains 35 TUs.
-- The latest staging census reached the newly added `com_shared.cpp` owner and
-  failed only at `_time64`; simulator and device jobs consequently could not
-  build the hard-required archive. The current local fix adds `_time64`,
-  `_localtime64`, and the tree-used sibling `_ctime64` to the existing iOS CRT
-  shim. Windows source lanes are untouched.
-- Hosted verification remains **UNVERIFIED** until the coordinator pushes this
-  local commit to staging and reports all three gates: census **35/35**, exact
-  simulator FS marker while retaining M13/M14 markers plus a green unsigned-
-  device link, and Windows Debug/Release green. Do not begin Wave 2 before
-  those verdicts and run IDs are recorded.
+- Authoritative B2 commit `b6f2861` passed the 35/35 census and Windows
+  Debug/Release. Its stub job exposed the expected whole-object closure:
+  exactly 119 undefined symbols, preserved at
+  `build-ios-lib/b2-undefined-symbols.txt`. B2 runtime remains unverified.
+- The local closure fix accounts for all 119: 114 grouped abort-loud function
+  boundaries, four exact-size poison data owners, and one reached real-minimal
+  `Sys_GetCpuCount` implementation using the same iOS sysconf/clamp semantics
+  as `threads.cpp`. The coordinator also removed a missed duplicate
+  `Com_Filter` before `b6f2861`; do not restore it.
+- Source tracing disproved the blanket assumption that all 119 are post-fence:
+  `Sys_GetCpuCount` is reached by `Com_InitDvars`, and the opening print could
+  call absent client/system consoles. The iOS headless lane now retains the
+  real common stderr print and explicitly guards both console frontends;
+  their scaffold entries remain abort-loud.
+- `dvar_cmds.cpp` is deliberately deferred to B4, where the frozen queued
+  console-event probe must behaviorally execute real `set`. That wave must
+  preflight/census it and delete `Dvar_AddCommands`, `Dvar_Set_f`,
+  `Dvar_SetA_f`, `Com_DvarDump`, `info1`, and `info2` together. B2 claims only
+  dvar registration/policy readback, never dvar command behavior.
+- The new exact line is
+  `cominit-spine=Com_Init entered — useFastFile=0, dedicated=2, sv/cl tails fenced`.
+  It is emitted only after `Com_Init` returns and the policy/fence postcondition
+  passes. The frozen B1 line and all earlier markers remain separately armed.
+- Game installation metadata is committed in `docs/ASSET_INVENTORY.md`; all
+  five MP boot zones are present on the user's Windows machine. Assets remain
+  forbidden from Git, CI, artifacts, and logs.
 - This Windows seat must not push or invoke `gh`; the coordination seat owns
   push and hosted-CI observation. Physical-iPad M13/M14 proof remains open and
   is not a blocker for hosted Phase 3 waves.
+
+## Stage B2 simulator runtime hypotheses (run `29352352608`)
+
+The app launched and remained observable through the screenshot window, but
+never wrote `Documents/metal_first_frame.txt`. The next simulator proof run
+captures `proof/app-console.txt`, a process-scoped unified log, the launch exit
+code, and any `KisakStub` `.ips` report. Match that evidence against these
+hypotheses before changing engine behavior:
+
+| # | Hypothesis / concrete failure scenario | Cheapest settling evidence |
+|---|---|---|
+| 1 | **The explicit headless request is not visible when the real common spine tests it.** `BootComInit.cpp:113` sets the flag before `Com_Init`, but if the state is lost or a duplicate owner is linked, `common.cpp:1349` misses the B2 branch and immediately reaches the abort-loud `SL_Init` tail instead of setting `com_iOSBootSpineReached`. | `app-console.txt` contains `boot scaffold reached unexpected dependency: SL_Init`; absence of that line plus a later spine message refutes this ordering/state failure. |
+| 2 | **The nominally empty startup line reaches a deferred dvar-command boundary.** `Com_ParseCommandLine` deliberately creates one console line even for `""` (`common.cpp:839-851`), and `Com_StartupVariable(0)` tokenizes it at `common.cpp:1359`. Any unexpected retained `set`/`seta` token would call the B4-deferred abort-loud `Dvar_Set_f`/`Dvar_SetA_f` owners. | `app-console.txt` names `Dvar_Set_f(B4 dvar_cmds owner)` or `Dvar_SetA_f(B4 dvar_cmds owner)`; normal engine prints followed by neither name refute this path. |
+| 3 | **A real early failure is being masked by the post-fence recovery scaffolds.** The most direct trigger is the 512 MiB headless hunk reservation (`com_memory.cpp:390-407`), whose failure reaches abort-loud `Sys_OutOfMemErrorInternal`; another `Com_Error` trigger longjmps to `Com_Init`, whose real-minimal `Sys_Error` aborts. If recovery inspects the intentionally poisoned `cls`, it can instead expose `CL_ConsoleFixPosition`/UI aborts and hide the originating error. | First use the `.ips` faulting frame and the last console line: `Sys_OutOfMemErrorInternal`, `Sys_Error: Error during initialization`, or a named client/UI scaffold settles the terminal path; the preceding engine error text identifies the original trigger. |
+
+### ADJUDICATED (run `29354619117`, commit `37c2d4c`)
+
+The diagnostics run settled it: **none of the three hypotheses**. The captured
+`app-console.txt` shows the preflight, spine, and 3-stage probe markers, then
+`----- FS_Startup -----`, `Current language: english`, and the terminal line
+`boot scaffold reached unexpected dependency: getBuildNumber`. The boot
+progressed past the B2 boundary into the FS bring-up; the first `Com_Printf`
+after the console log opened called `getBuildNumber()` (`common.cpp:522`),
+whose owner was still a `BOOT_UNREACHED` scaffold. Fix: `src/buildnumber.cpp`
+graduated into the census (TU #36) and the `libkisakcominit.a` member list;
+`buildnumber.h` is generated in the iOS lanes via `increment_build.sh` (it is
+gitignored and Windows-generated otherwise); the scaffold was deleted. Note
+hypothesis 3's 512 MiB reservation was NOT reached-and-refused — the trip
+happened before any large hunk commit. Expect further one-symbol-per-run
+scaffold trips on this path; each is the wave mechanism working, not a defect.
 
 ## Verified state
 
@@ -189,6 +231,28 @@ remaining `fs_homepath->current.integer` pointer uses, and any language-hook
 pointer storage. There are no `jmp_buf` sites in the predicted Wave 1 set,
 but the audit remains an explicit zero-result gate.
 
+### Stage B1 — cold dvar preflight candidate
+
+The frozen B1 simulator line is:
+
+```text
+cominit-preflight=dvar enum/external string OK — cold Dvar_Init path
+```
+
+It is emitted only after the app enters through `BootComInit.cpp` on the main
+thread, initializes thread-local engine state, calls real `Dvar_Init` once,
+proves both enum read/mutate/restore and external string readback, and verifies
+that the tested pointers actually use upper arm64 address bits. The old
+`kisak_boot_smoke` symbol is removed; `BootSmoke.cpp` now contains behavioral
+probes only and repeats no initializer.
+
+This marker deliberately does **not** claim real dvar console commands or the
+production script-string subsystem. `Dvar_AddCommands` and `SL_*` remain
+functional scaffold owners for B1 and must be replaced by their real TUs before
+M15, as the corrected contract already requires. The B2 candidate deletes the
+manual hunk/Cbuf/Cmd tail and moves those calls behind real `Com_Init`; hosted
+link/runtime proof is still required before that replacement is accepted.
+
 ## Next actions, in order
 
 1. When the personal Mac/iPad is available, install a signed M14 build, pull
@@ -198,18 +262,19 @@ but the audit remains an explicit zero-result gate.
    is the only remaining Phase 2 boundary and does not invalidate the hosted
    proof while hardware is unavailable. It may be deferred while Phase 3
    begins, but it is mandatory before any physical-device M13/M14 claim.
-2. Coordinator: push the local Wave 1 CRT fix to staging and report the census,
-   simulator/device-build, and Windows verdicts listed in the active state.
-   Fix any red result inside Wave 1. Only after all are green, record exact run
-   evidence and begin Stage B1: dvar enum/external-string preflight plus the
-   fresh cold-start orchestrator skeleton required by the corrected contract.
-3. After Phase 3, follow `docs/FASTFILE_PLAN.md` FF0-FF3 with synthetic zones.
+2. Coordinator: push the local 119-symbol closure fix to staging. Require
+   census 35/35, Windows Debug/Release, zero remaining undefined/duplicate
+   symbols in both app lanes, exact nine-member archive/provenance, unsigned
+   device IPA, and all five simulator marker assertions. A named scaffold
+   abort is a B2 failure, not permission to weaken the fence or marker.
+3. Next Sol turn: adversarially review `docs/ROADMAP_TO_PLAYABLE.md`,
+   `docs/OAT_EVALUATION.md`, and both knowledge packs, then reorder the plan
+   around the physical-iPad in-game screenshot posted to GitHub. Web research
+   is permitted; do not start that critique inside this closure-fix slice.
+4. After Phase 3, follow `docs/FASTFILE_PLAN.md` FF0-FF3 with synthetic zones.
    Before hand-writing FF2 maps for pointer-bearing structs, evaluate the
    GPL-3.0 OpenAssetTools IW3 `ZoneCodeGenerator` as the translation core and
    record fit/no-fit reasoning and required credit in the plan.
-4. When the user supplies the Steam install path, inventory it read-only into
-   `docs/ASSET_INVENTORY.md`: filenames, sizes, and hashes only. Game files
-   must never enter Git, CI, artifacts, or logs; FF4 is local-offline only.
 
 ## Guardrails
 
@@ -222,3 +287,25 @@ but the audit remains an explicit zero-result gate.
 - Do not put COD4 assets in Git, CI, artifacts, or logs.
 - Branding is BMK4; preserve KisakCOD/LWSS GPL-3.0 credit and bundle ID
   `dev.braxton.kisakstub`.
+
+## 2026-07-14 ratified ordering override and FF0a checkpoint
+
+`docs/reviews/roadmap-claude-response.md` ratifies the ten-slice order in
+`docs/reviews/roadmap-sol.md`, with amendments A1-A4. It supersedes the stale
+“After Phase 3” ordering above: FF0a Slice 1, then the private real-zone Slice
+2, then B3 → B4 → B5. The OAT conformance spike runs independently on lane 2
+and must converge before Slice 7. The frozen acceptance artifact is a physical-
+iPad `mp_killhouse` frame, not the main menu.
+
+Lane 1 has implemented FF0a Slice 1 locally: a Windows-only
+`bmk4-ff-oracle` target, generated empty IW3 fixture, canonical v1 structural
+dump, byte-stability assertions, canonical repo-root input/output allowlisting,
+and a fixture-output-only artifact glob. Hosted compilation and runtime remain
+**UNVERIFIED**. Require Debug/Release tool builds, exact schema/hash assertions,
+identical dump hashes, and both outside-root refusal tests before Slice 1 is
+green. The coordinator's separate B2 fix at staging `f6ffe33` was still running
+when this checkpoint was written; any red verdict there preempts Slice 2.
+
+After both gates are green, Slice 2 runs the oracle locally against the five
+inventory-confirmed MP boot zones plus `mp_killhouse.ff`. Raw reports stay out
+of git/CI/artifacts; only a sanitized structural closure report may land.

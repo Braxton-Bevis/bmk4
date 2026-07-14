@@ -1,0 +1,528 @@
+diff --git a/src/dxvk/dxvk_adapter.cpp b/src/dxvk/dxvk_adapter.cpp
+index d890765..fc462e6 100644
+--- a/src/dxvk/dxvk_adapter.cpp
++++ b/src/dxvk/dxvk_adapter.cpp
+@@ -234,7 +234,10 @@ namespace dxvk {
+     deviceQueues.transfer = getDeviceQueue(vkd, queueMapping.transfer);
+     deviceQueues.sparse   = getDeviceQueue(vkd, queueMapping.sparse);
+ 
+-    return new DxvkDevice(m_instance, this, vkd, m_capabilities.getFeatures(), deviceQueues, DxvkQueueCallback());
++    Rc<DxvkDevice> result = new DxvkDevice(
++      m_instance, this, vkd, m_capabilities.getFeatures(), deviceQueues, DxvkQueueCallback());
++    result->initResources();
++    return result;
+   }
+ 
+ 
+@@ -268,7 +271,10 @@ namespace dxvk {
+     deviceQueues.transfer = getDeviceQueue(vkd, queueMapping.transfer);
+     deviceQueues.sparse   = getDeviceQueue(vkd, queueMapping.sparse);
+ 
+-    return new DxvkDevice(m_instance, this, vkd, importCaps.getFeatures(), deviceQueues, args.queueCallback);
++    Rc<DxvkDevice> result = new DxvkDevice(
++      m_instance, this, vkd, importCaps.getFeatures(), deviceQueues, args.queueCallback);
++    result->initResources();
++    return result;
+   }
+ 
+ 
+diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
+index 7722f12..9cccf3a 100644
+--- a/src/dxvk/dxvk_context.cpp
++++ b/src/dxvk/dxvk_context.cpp
+@@ -6284,6 +6284,7 @@ namespace dxvk {
+   void DxvkContext::updateDescriptorSetsBindings(const DxvkPipelineBindings* layout) {
+     DxvkPipelineLayoutType pipelineLayoutType = getActivePipelineLayoutType(BindPoint);
+     const auto* pipelineLayout = layout->getLayout(pipelineLayoutType);
++    const bool useDummyResources = !m_device->features().extRobustness2.nullDescriptor;
+ 
+     // Ensure that the arrays we write descriptor info to are big enough
+     if (unlikely(layout->getDescriptorCount() > m_legacyDescriptors.infos.size()))
+@@ -6332,9 +6333,16 @@ namespace dxvk {
+ 
+               trackUniformBufferBinding<BindPoint>(binding, slice);
+             } else {
+-              descriptorInfo.buffer.buffer = VK_NULL_HANDLE;
+-              descriptorInfo.buffer.offset = 0;
+-              descriptorInfo.buffer.range = VK_WHOLE_SIZE;
++              if (useDummyResources) {
++                auto bufferInfo = m_common->dummyResources().bufferInfo();
++                descriptorInfo.buffer.buffer = bufferInfo.buffer;
++                descriptorInfo.buffer.offset = bufferInfo.offset;
++                descriptorInfo.buffer.range = bufferInfo.size;
++              } else {
++                descriptorInfo.buffer.buffer = VK_NULL_HANDLE;
++                descriptorInfo.buffer.offset = 0;
++                descriptorInfo.buffer.range = VK_WHOLE_SIZE;
++              }
+             }
+           } else {
+             switch (binding.getDescriptorType()) {
+@@ -6357,9 +6365,14 @@ namespace dxvk {
+                     m_cmd->track(view->image(), DxvkAccess::Read);
+                   }
+                 } else {
+-                  descriptorInfo.image.sampler = VK_NULL_HANDLE;
+-                  descriptorInfo.image.imageView = VK_NULL_HANDLE;
+-                  descriptorInfo.image.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++                  if (useDummyResources) {
++                    descriptorInfo = m_common->dummyResources()
++                      .imageViewInfo(binding.getViewType(), false)->legacy;
++                  } else {
++                    descriptorInfo.image.sampler = VK_NULL_HANDLE;
++                    descriptorInfo.image.imageView = VK_NULL_HANDLE;
++                    descriptorInfo.image.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++                  }
+                 }
+               } break;
+ 
+@@ -6375,9 +6388,14 @@ namespace dxvk {
+ 
+                   trackImageViewBinding<BindPoint, true>(binding, *res.imageView);
+                 } else {
+-                  descriptorInfo.image.sampler = VK_NULL_HANDLE;
+-                  descriptorInfo.image.imageView = VK_NULL_HANDLE;
+-                  descriptorInfo.image.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++                  if (useDummyResources) {
++                    descriptorInfo = m_common->dummyResources()
++                      .imageViewInfo(binding.getViewType(), true)->legacy;
++                  } else {
++                    descriptorInfo.image.sampler = VK_NULL_HANDLE;
++                    descriptorInfo.image.imageView = VK_NULL_HANDLE;
++                    descriptorInfo.image.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++                  }
+                 }
+               } break;
+ 
+@@ -6393,7 +6411,9 @@ namespace dxvk {
+ 
+                   trackBufferViewBinding<BindPoint, false>(binding, *res.bufferView);
+                 } else {
+-                  descriptorInfo.bufferView = VK_NULL_HANDLE;
++                  descriptorInfo.bufferView = useDummyResources
++                    ? m_common->dummyResources().bufferViewInfo(false)->legacy.bufferView
++                    : VK_NULL_HANDLE;
+                 }
+               } break;
+ 
+@@ -6409,7 +6429,9 @@ namespace dxvk {
+ 
+                   trackBufferViewBinding<BindPoint, true>(binding, *res.bufferView);
+                 } else {
+-                  descriptorInfo.bufferView = VK_NULL_HANDLE;
++                  descriptorInfo.bufferView = useDummyResources
++                    ? m_common->dummyResources().bufferViewInfo(true)->legacy.bufferView
++                    : VK_NULL_HANDLE;
+                 }
+               } break;
+ 
+@@ -6425,9 +6447,16 @@ namespace dxvk {
+ 
+                   trackBufferViewBinding<BindPoint, false>(binding, *res.bufferView);
+                 } else {
+-                  descriptorInfo.buffer.buffer = VK_NULL_HANDLE;
+-                  descriptorInfo.buffer.offset = 0;
+-                  descriptorInfo.buffer.range = VK_WHOLE_SIZE;
++                  if (useDummyResources) {
++                    auto bufferInfo = m_common->dummyResources().bufferInfo();
++                    descriptorInfo.buffer.buffer = bufferInfo.buffer;
++                    descriptorInfo.buffer.offset = bufferInfo.offset;
++                    descriptorInfo.buffer.range = bufferInfo.size;
++                  } else {
++                    descriptorInfo.buffer.buffer = VK_NULL_HANDLE;
++                    descriptorInfo.buffer.offset = 0;
++                    descriptorInfo.buffer.range = VK_WHOLE_SIZE;
++                  }
+                 }
+               } break;
+ 
+@@ -6443,9 +6472,16 @@ namespace dxvk {
+ 
+                   trackBufferViewBinding<BindPoint, true>(binding, *res.bufferView);
+                 } else {
+-                  descriptorInfo.buffer.buffer = VK_NULL_HANDLE;
+-                  descriptorInfo.buffer.offset = 0;
+-                  descriptorInfo.buffer.range = VK_WHOLE_SIZE;
++                  if (useDummyResources) {
++                    auto bufferInfo = m_common->dummyResources().bufferInfo();
++                    descriptorInfo.buffer.buffer = bufferInfo.buffer;
++                    descriptorInfo.buffer.offset = bufferInfo.offset;
++                    descriptorInfo.buffer.range = bufferInfo.size;
++                  } else {
++                    descriptorInfo.buffer.buffer = VK_NULL_HANDLE;
++                    descriptorInfo.buffer.offset = 0;
++                    descriptorInfo.buffer.range = VK_WHOLE_SIZE;
++                  }
+                 }
+               } break;
+ 
+@@ -6705,6 +6741,8 @@ namespace dxvk {
+         if (likely(sampler)) {
+           index = sampler->getDescriptor().samplerIndex;
+           m_cmd->track(sampler);
++        } else if (!m_device->features().extRobustness2.nullDescriptor) {
++          index = m_common->dummyResources().samplerInfo().samplerIndex;
+         }
+ 
+         std::memcpy(&m_state.pc.resourceData[binding.getBlockOffset()], &index, sizeof(index));
+@@ -7061,9 +7099,17 @@ namespace dxvk {
+ 
+         m_cmd->track(m_state.vi.vertexBuffers[binding].buffer(), DxvkAccess::Read);
+       } else {
+-        buffers[i] = VK_NULL_HANDLE;
+-        offsets[i] = 0;
+-        lengths[i] = 0;
++        if (!m_device->features().extRobustness2.nullDescriptor) {
++          auto vbo = m_common->dummyResources().bufferInfo();
++          buffers[i] = vbo.buffer;
++          offsets[i] = vbo.offset;
++          lengths[i] = vbo.size;
++        } else {
++          buffers[i] = VK_NULL_HANDLE;
++          offsets[i] = 0;
++          lengths[i] = 0;
++        }
++
+         strides[i] = 0;
+       }
+     }
+diff --git a/src/dxvk/dxvk_device.cpp b/src/dxvk/dxvk_device.cpp
+index a35626f..5215e6d 100644
+--- a/src/dxvk/dxvk_device.cpp
++++ b/src/dxvk/dxvk_device.cpp
+@@ -171,6 +171,11 @@ namespace dxvk {
+   }
+ 
+ 
++  void DxvkDevice::initResources() {
++    m_objects.dummyResources().clearResources();
++  }
++
++
+   Rc<DxvkEvent> DxvkDevice::createGpuEvent() {
+     return new DxvkEvent(this);
+   }
+diff --git a/src/dxvk/dxvk_device.h b/src/dxvk/dxvk_device.h
+index d77a888..d07888a 100644
+--- a/src/dxvk/dxvk_device.h
++++ b/src/dxvk/dxvk_device.h
+@@ -271,7 +271,8 @@ namespace dxvk {
+      * \returns \c true if all required features are supported.
+      */
+     bool canUseDescriptorBuffer() const {
+-      return m_features.extDescriptorBuffer.descriptorBuffer;
++      return m_features.extDescriptorBuffer.descriptorBuffer
++          && m_features.extRobustness2.nullDescriptor;
+     }
+ 
+     /**
+@@ -309,6 +310,14 @@ namespace dxvk {
+      */
+     Rc<DxvkContext> createContext();
+ 
++    /**
++     * \brief Initializes persistent fallback resources
++     *
++     * Creates and clears resources used in place of null handles
++     * when the device does not support null descriptors.
++     */
++    void initResources();
++
+     /**
+      * \brief Creates a GPU event
+      * \returns New GPU event
+diff --git a/src/dxvk/dxvk_unbound.cpp b/src/dxvk/dxvk_unbound.cpp
+index 1df1b3c..a19311a 100644
+--- a/src/dxvk/dxvk_unbound.cpp
++++ b/src/dxvk/dxvk_unbound.cpp
+@@ -4,7 +4,27 @@ namespace dxvk {
+   
+   DxvkUnboundResources::DxvkUnboundResources(DxvkDevice* dev)
+   : m_device(dev) {
++    if (!m_device->features().extRobustness2.nullDescriptor) {
++      m_buffer = createBuffer();
++      m_bufferCreated.store(true, std::memory_order_release);
+ 
++      m_sampler = createSampler();
++      m_samplerCreated.store(true, std::memory_order_release);
++
++      m_uniformTexelBufferView = createBufferView(
++        m_buffer, VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
++      m_storageTexelBufferView = createBufferView(
++        m_buffer, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT);
++
++      m_image1D = createImage(VK_IMAGE_TYPE_1D, 1u);
++      m_image2D = createImage(VK_IMAGE_TYPE_2D, 6u);
++      m_image3D = createImage(VK_IMAGE_TYPE_3D, 1u);
++
++      m_sampledImageViews = createImageViews(
++        VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT);
++      m_storageImageViews = createImageViews(
++        VK_FORMAT_R32_UINT, VK_IMAGE_USAGE_STORAGE_BIT);
++    }
+   }
+   
+   
+@@ -41,6 +61,36 @@ namespace dxvk {
+   }
+ 
+ 
++  const DxvkDescriptor* DxvkUnboundResources::bufferViewInfo(bool storage) {
++    return storage
++      ? m_storageTexelBufferView->getDescriptor(false)
++      : m_uniformTexelBufferView->getDescriptor(false);
++  }
++
++
++  const DxvkDescriptor* DxvkUnboundResources::imageViewInfo(
++          VkImageViewType       type,
++          bool                  storage) {
++    return getImageView(type, storage)->getDescriptor();
++  }
++
++
++  void DxvkUnboundResources::clearResources() {
++    if (m_device->features().extRobustness2.nullDescriptor)
++      return;
++
++    Rc<DxvkContext> context = m_device->createContext();
++    context->beginRecording(m_device->createCommandList());
++
++    context->initImage(m_image1D, VK_IMAGE_LAYOUT_UNDEFINED);
++    context->initImage(m_image2D, VK_IMAGE_LAYOUT_UNDEFINED);
++    context->initImage(m_image3D, VK_IMAGE_LAYOUT_UNDEFINED);
++
++    m_device->submitCommandList(
++      context->endRecording(nullptr), nullptr, 0u, nullptr);
++  }
++
++
+   Rc<DxvkSampler> DxvkUnboundResources::createSampler() {
+     DxvkSamplerKey info;
+     info.setFilter(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR);
+@@ -81,5 +131,125 @@ namespace dxvk {
+     std::memset(buffer->mapPtr(0), 0, info.size);
+     return buffer;
+   }
++
++
++  Rc<DxvkBufferView> DxvkUnboundResources::createBufferView(
++    const Rc<DxvkBuffer>&       buffer,
++          VkBufferUsageFlagBits usage) {
++    DxvkBufferViewKey info;
++    info.format = VK_FORMAT_R32_UINT;
++    info.usage = usage;
++    info.offset = 0u;
++    info.size = buffer->info().size;
++
++    return buffer->createView(info);
++  }
++
++
++  Rc<DxvkImage> DxvkUnboundResources::createImage(
++          VkImageType           type,
++          uint32_t              layers) {
++    const std::array<VkFormat, 2u> viewFormats = {
++      VK_FORMAT_R32_SFLOAT,
++      VK_FORMAT_R32_UINT,
++    };
++
++    DxvkImageCreateInfo info;
++    info.type = type;
++    info.format = VK_FORMAT_R32_UINT;
++    info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
++    info.sampleCount = VK_SAMPLE_COUNT_1_BIT;
++    info.extent = { 1u, 1u, 1u };
++    info.numLayers = layers;
++    info.mipLevels = 1u;
++    info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT
++               | VK_IMAGE_USAGE_SAMPLED_BIT
++               | VK_IMAGE_USAGE_STORAGE_BIT;
++    info.stages = VK_PIPELINE_STAGE_TRANSFER_BIT
++                | m_device->getShaderPipelineStages();
++    info.access = VK_ACCESS_TRANSFER_WRITE_BIT
++                | VK_ACCESS_SHADER_READ_BIT
++                | VK_ACCESS_SHADER_WRITE_BIT;
++    info.layout = VK_IMAGE_LAYOUT_GENERAL;
++    info.tiling = VK_IMAGE_TILING_OPTIMAL;
++    info.viewFormatCount = viewFormats.size();
++    info.viewFormats = viewFormats.data();
++    info.debugName = "Null image";
++
++    if (type == VK_IMAGE_TYPE_2D)
++      info.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
++
++    return m_device->createImage(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
++  }
++
++
++  Rc<DxvkImageView> DxvkUnboundResources::createImageView(
++    const Rc<DxvkImage>&        image,
++          VkFormat             format,
++          VkImageViewType      type,
++          VkImageUsageFlagBits usage,
++          uint32_t             layers) {
++    DxvkImageViewKey info;
++    info.viewType = type;
++    info.usage = usage;
++    info.format = format;
++    info.layout = VK_IMAGE_LAYOUT_GENERAL;
++    info.aspects = VK_IMAGE_ASPECT_COLOR_BIT;
++    info.mipIndex = 0u;
++    info.mipCount = 1u;
++    info.layerIndex = 0u;
++    info.layerCount = layers;
++
++    if (usage == VK_IMAGE_USAGE_SAMPLED_BIT) {
++      info.packedSwizzle = DxvkImageViewKey::packSwizzle(VkComponentMapping {
++        VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ZERO,
++        VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ZERO });
++    }
++
++    return image->createView(info);
++  }
++
++
++  DxvkUnboundResources::UnboundViews DxvkUnboundResources::createImageViews(
++          VkFormat             format,
++          VkImageUsageFlagBits usage) {
++    UnboundViews result;
++    result.view1D = createImageView(m_image1D, format,
++      VK_IMAGE_VIEW_TYPE_1D, usage, 1u);
++    result.view1DArray = createImageView(m_image1D, format,
++      VK_IMAGE_VIEW_TYPE_1D_ARRAY, usage, 1u);
++    result.view2D = createImageView(m_image2D, format,
++      VK_IMAGE_VIEW_TYPE_2D, usage, 1u);
++    result.view2DArray = createImageView(m_image2D, format,
++      VK_IMAGE_VIEW_TYPE_2D_ARRAY, usage, 1u);
++    result.viewCube = createImageView(m_image2D, format,
++      VK_IMAGE_VIEW_TYPE_CUBE, usage, 6u);
++    result.viewCubeArray = createImageView(m_image2D, format,
++      VK_IMAGE_VIEW_TYPE_CUBE_ARRAY, usage, 6u);
++    result.view3D = createImageView(m_image3D, format,
++      VK_IMAGE_VIEW_TYPE_3D, usage, 1u);
++    return result;
++  }
++
++
++  DxvkImageView* DxvkUnboundResources::getImageView(
++          VkImageViewType       type,
++          bool                  storage) const {
++    const UnboundViews& views = storage
++      ? m_storageImageViews
++      : m_sampledImageViews;
++
++    switch (type) {
++      case VK_IMAGE_VIEW_TYPE_1D:         return views.view1D.ptr();
++      case VK_IMAGE_VIEW_TYPE_1D_ARRAY:   return views.view1DArray.ptr();
++      case VK_IMAGE_VIEW_TYPE_MAX_ENUM:
++      case VK_IMAGE_VIEW_TYPE_2D:         return views.view2D.ptr();
++      case VK_IMAGE_VIEW_TYPE_2D_ARRAY:   return views.view2DArray.ptr();
++      case VK_IMAGE_VIEW_TYPE_CUBE:       return views.viewCube.ptr();
++      case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY: return views.viewCubeArray.ptr();
++      case VK_IMAGE_VIEW_TYPE_3D:         return views.view3D.ptr();
++      default:                            return nullptr;
++    }
++  }
+   
+ }
+diff --git a/src/dxvk/dxvk_unbound.h b/src/dxvk/dxvk_unbound.h
+index 4de7ec9..22f18c0 100644
+--- a/src/dxvk/dxvk_unbound.h
++++ b/src/dxvk/dxvk_unbound.h
+@@ -43,7 +43,48 @@ namespace dxvk {
+      */
+     DxvkSamplerDescriptor samplerInfo();
+ 
++    /**
++     * \brief Dummy formatted buffer descriptor
++     *
++     * Returns a view of the zero buffer for unbound
++     * uniform or storage texel buffer descriptors.
++     * \param [in] storage Whether the view is used for storage
++     * \returns Dummy buffer view descriptor
++     */
++    const DxvkDescriptor* bufferViewInfo(bool storage);
++
++    /**
++     * \brief Dummy image view descriptor
++     *
++     * Returns a persistent image view that is compatible
++     * with the requested shader view type.
++     * \param [in] type Image view type
++     * \param [in] storage Whether the view is used for storage
++     * \returns Dummy image view descriptor
++     */
++    const DxvkDescriptor* imageViewInfo(
++            VkImageViewType       type,
++            bool                  storage);
++
++    /**
++     * \brief Initializes dummy image contents
++     *
++     * Records and submits zero initialization for dummy images.
++     * Does nothing when null descriptors are supported.
++     */
++    void clearResources();
++
+   private:
++
++    struct UnboundViews {
++      Rc<DxvkImageView> view1D;
++      Rc<DxvkImageView> view1DArray;
++      Rc<DxvkImageView> view2D;
++      Rc<DxvkImageView> view2DArray;
++      Rc<DxvkImageView> viewCube;
++      Rc<DxvkImageView> viewCubeArray;
++      Rc<DxvkImageView> view3D;
++    };
+     
+     DxvkDevice*             m_device;
+ 
+@@ -53,11 +94,44 @@ namespace dxvk {
+     dxvk::mutex             m_mutex;
+     Rc<DxvkSampler>         m_sampler;
+     Rc<DxvkBuffer>          m_buffer;
++
++    Rc<DxvkBufferView>      m_uniformTexelBufferView;
++    Rc<DxvkBufferView>      m_storageTexelBufferView;
++
++    Rc<DxvkImage>           m_image1D;
++    Rc<DxvkImage>           m_image2D;
++    Rc<DxvkImage>           m_image3D;
++
++    UnboundViews            m_sampledImageViews;
++    UnboundViews            m_storageImageViews;
+     
+     Rc<DxvkSampler> createSampler();
+     
+     Rc<DxvkBuffer> createBuffer();
+-    
++
++    Rc<DxvkBufferView> createBufferView(
++      const Rc<DxvkBuffer>&       buffer,
++            VkBufferUsageFlagBits usage);
++
++    Rc<DxvkImage> createImage(
++            VkImageType           type,
++            uint32_t              layers);
++
++    Rc<DxvkImageView> createImageView(
++      const Rc<DxvkImage>&        image,
++            VkFormat             format,
++            VkImageViewType      type,
++            VkImageUsageFlagBits usage,
++            uint32_t             layers);
++
++    UnboundViews createImageViews(
++            VkFormat             format,
++            VkImageUsageFlagBits usage);
++
++    DxvkImageView* getImageView(
++            VkImageViewType       type,
++            bool                  storage) const;
++
+   };
+   
+ }
+

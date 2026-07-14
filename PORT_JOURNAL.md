@@ -788,3 +788,216 @@ exact M13, M14, and frozen filesystem markers; green unsigned arm64 device IPA;
 and Windows Debug/Release green. Until those hosted results and run IDs return,
 Wave 1 and its runtime marker remain **UNVERIFIED** and Stage B1 must not start.
 
+## Phase 3 Stage B1 candidate — fresh cold dvar preflight (2026-07-13, Windows seat; CI UNVERIFIED)
+
+**Attempted:** establish the cold WinMain-equivalent entry required by the
+corrected M15 contract and move the existing dvar LP64 check out of the
+post-M13 filesystem probe. This slice intentionally stops before `Com_Init`.
+A later coordination directive explicitly authorized authoring B1 while the
+Wave 1 staging run is active; it did not authorize a Wave 1 green claim or B2.
+
+**Changes:** added `BootComInit.cpp` as the only cold entry. It rejects repeat
+entry and non-main-thread execution, initializes engine thread data, calls real
+`Dvar_Init` exactly once, and behaviorally proves enum registration,
+readback, external mutation, restore, and external-string readback. Both source
+pointers and the stored external-string pointer must have nonzero upper 32
+bits, so a truncated 32-bit lane cannot earn the marker. The old
+`kisak_boot_smoke` symbol was removed; `BootSmoke.cpp` now re-earns the exact
+M13 line using post-init probes only. The Wave 1 FS probe no longer duplicates
+the dvar preflight.
+
+Swift now enters the cold orchestrator first and records the separately frozen
+line `cominit-preflight=dvar enum/external string OK — cold Dvar_Init path` in
+the HUD/marker before allowing the retained M13, FS, and M14 chain. CI requires
+that exact line, requires all six real dvar functions in `libkisaksmoke.a`,
+denies app-object definitions of those functions, requires both new app entry
+symbols, and forbids the retired entry name. Existing marker assertions were
+not changed or removed.
+
+**Ownership boundary:** B1 adds no engine TU and does not pad the 35-entry
+census; it newly reaches the already-real `dvar.cpp`. `Dvar_AddCommands` and
+`SL_*` remain functional app scaffolds during this slice. The B1 marker claims
+only registry and pointer-lane behavior, not dvar console commands or the real
+script-string subsystem. Both scaffold groups remain forbidden for M15. The
+manual hunk/Cbuf/Cmd tail in the new orchestrator is explicitly temporary and
+must be replaced, not combined with, the real `Com_Init` spine in B2.
+
+**Windows-available evidence:** the standing portability scanner reports
+`preflight: no known-class findings` for `src/universal/dvar.cpp`; no new
+census TU was added. Hosted compilation, simulator execution, unsigned-device
+linkage, and Windows regression remain **UNVERIFIED** on this compilerless
+seat.
+
+**Required coordinator verdict:** Wave 1 must first receive its pending green
+run IDs. For B1 require census **35 PASS, 0 FAIL**; the exact new preflight line
+plus unchanged M13/FS/M14 lines from the simulator marker; real-symbol
+allowlist and scaffold-denylist checks green; unsigned arm64 IPA green; and
+Windows Debug/Release green. Any failure remains inside B1; B2 must not start.
+
+### Tooling addendum — on-demand macOS lab (CI UNVERIFIED)
+
+Added a `workflow_dispatch` macOS-15 lab runner with one script-path input. It
+realpath-confines execution beneath `scripts/platform/ios/lab/`, supplies a
+dedicated `lab-out/`, and uploads partial output even after probe failure. The
+included read-only example records macOS/Xcode/SDK versions and simulator
+runtime/device-type inventories. Dispatch proof and artifact contents are
+pending the coordinator; no Mac result is claimed locally.
+
+## Phase 3 Stage B2 candidate — real common.cpp spine (2026-07-13, Windows seat; CI UNVERIFIED)
+
+**Evidence received before this slice:** the Wave 1 time-shim build is
+compile-proven: census run `29281941827` passed **35/35**, and Windows run
+`29281941785` passed Debug and Release. Stub run `29281941846` stopped on the
+single remaining `_copyDWord` undefined. The coordinator supplied that
+function's complete four-line behavior as a temporary scaffold with an
+explicit common-spine deletion boundary. No later stub verdict was supplied,
+so this entry does not claim a wholly green Wave 1 or B1 run.
+
+**Attempted:** replace B1's manual hunk/Cbuf/Cmd tail with entry through the
+real `Com_Init` owner while stopping truthfully before the ungraduated heavy
+tails. `src/qcommon/common.cpp` is now a ninth hard-required member of the
+exact `libkisakcominit.a`; it was already in the monotonic 35-TU census, so the
+census was not padded. Archive provenance now requires real `Com_Init`, the
+iOS fence query, `_copyDWord`, and the four common globals, and denies their
+former app-object owners.
+
+**Runtime policy and marker:** `BootComInit.cpp` retains the frozen arm64 dvar
+preflight, then explicitly requests headless/no-assets mode and calls real
+`Com_Init`. In the iOS lane, `Com_InitDvars` registers real `useFastFile=0`
+and dedicated-internet policy (`dedicated=2`). The temporary B2 fence executes
+real endian, Cbuf, Cmd, dvar-policy, and hunk initialization, then returns
+before SL/filesystem/database/network/SV/CL/renderer/sound. The orchestrator
+requires the fence state and both dvar values before exposing the new line
+`cominit-spine=Com_Init entered — useFastFile=0, dedicated=2, sv/cl tails fenced`.
+The B1, M13, FS, and M14 assertions remain armed independently.
+
+**Scaffold ownership:** fourteen app definitions were deleted as their real
+owners joined (`Com_Error`, five Com_Print/Com_Mem helpers, `Com_DPrintf`,
+`Com_LogFileOpen`, `Com_StartupVariable`, `_copyDWord`, `com_dedicated`,
+`com_sv_running`, `useFastFile`, and `com_errorEntered`). The known SV/CL,
+network, renderer, and sound tail entry points are abort-loud with named
+deletion owners; the runtime fence must keep all of them unreachable. B2 does
+not claim production `Dvar_AddCommands`, `SL_*`, `info1`, or `info2`; their
+remaining scaffolds are still forbidden at M15.
+
+**Portability audit:** the scanner's unconditional `EMMS_INSTRUCTION` finding
+is resolved by a `KISAK_IOS` no-op, which is the arm64 equivalent because
+there is no x87/MMX alias state. The other asm site is inside the existing
+`_M_X686` branch and is not compiled for arm64. Every `common.cpp` `jmp_buf`
+site points through `Sys_GetValue(2)` to `q_shared.cpp`'s native
+`jmp_buf g_com_error[THREAD_CONTEXT_COUNT]`; there is no fixed 64-byte storage
+to widen. `com_files.cpp` scanner findings (`io.h`, `_findfirst64i32`,
+`_findnext64i32`, `_findclose`) remain exclusively in the byte-identical
+Windows `#else`; its iOS lane uses POSIX headers and directory APIs.
+
+**Windows-available evidence:** `git diff --check`, Git Bash syntax checks,
+the 35-path unique/existing census assertion, exact nine-member archive list,
+marker greps, real-owner allowlists, and app-scaffold denylists pass locally.
+This seat has no compiler. Hosted census, simulator link/runtime, unsigned
+device link, and Windows regression for B2 are **UNVERIFIED**.
+
+**Required coordinator verdict:** census remains **35 PASS, 0 FAIL**; the
+archive is exactly nine members and contains the asserted real owners; the
+simulator links and emits both exact Com_Init lines plus unchanged M13/FS/M14;
+the unsigned arm64 device IPA links; and Windows Debug/Release stay green. If
+the app link is red, preserve the complete undefined-symbol output: it is the
+ratified definition of the next bounded B2 closure, not permission to add
+benign defaults or weaken any gate.
+
+## Phase 3 Stage B2 link-closure fix — 119 symbols (2026-07-14, Windows seat; CI UNVERIFIED)
+
+**Hosted verdict received:** authoritative staging commit `b6f2861` passed the
+iOS compile census at **35/35** and passed Windows Debug/Release. The stub link
+failed, as the linker-driven method predicted, with exactly 119 undefined
+symbols from the real `common.cpp` whole-object closure. The complete list is
+preserved at `build-ios-lib/b2-undefined-symbols.txt`. The coordinator also
+removed one scaffold duplicate missed by the B2 sweep, `Com_Filter`, before
+pushing; its real `com_shared.cpp` owner remains intact. No hosted run IDs were
+provided with this verdict, so none are invented here.
+
+**Attempted:** close only that evidence-defined linker set without graduating
+post-fence subsystems early. All 119 names are accounted for in
+`BootScaffold.cpp`: 114 functions are grouped abort-loud by their future real
+owner (common/config, client/UI, database/script/assets, network/server, and
+renderer/sound/platform); the four direct data references (`clientUIActives`,
+`cls`, `sv`, `updateScreenCalled`) use exact-size poison storage because data
+cannot abort on access; and `Sys_GetCpuCount` is real-minimal rather than a
+stub. The poison sizes are asserted against the MP layouts and the B2 marker
+can only be earned after the fence, before any data read.
+
+**Reached-path correction:** source tracing found that the 119-symbol report
+was not entirely post-fence. `Com_InitDvars` calls `Sys_GetCpuCount`, so its iOS
+body now performs the real `sysconf(_SC_NPROCESSORS_ONLN)` query and clamps to
+the engine's supported 1-4 range exactly as `threads.cpp` does. Also, the
+opening real `Com_Printf` could call `CL_ConsolePrint` and `Sys_Print` before
+`com_dedicated` is registered. Under the explicit iOS headless request,
+`Com_PrintMessage` now keeps its unconditional stderr output but fences those
+absent console frontends. Both frontend definitions remain abort-loud, so any
+unintended call fails by name.
+
+**dvar command decision:** `dvar_cmds.cpp` does **not** join B2. The B2 line
+claims real dvar registration and explicit policy readback only; it does not
+claim `set`, `seta`, `dvarlist`, or `Com_DvarDump`. Pulling that TU now would
+expand a bounded link-only slice without earning a new behavior. It joins no
+later than B4, because the frozen queued-console-event probe must execute real
+`set`; that wave must preflight/census the TU and atomically delete
+`Dvar_AddCommands`, `Dvar_Set_f`, `Dvar_SetA_f`, `Com_DvarDump`, `info1`, and
+`info2`. This preserves the Challenge-1 prohibition on M15-grade dvar claims
+using fake command owners.
+
+**Windows-available evidence:** a mechanical comparison accounts for all 119
+linker names exactly (114 abort functions + one reached real function + four
+data owners). No real TU was added, so the census remains 35 and no new-TU
+preflight was required. The newly reached `common.cpp` path remains covered by
+the prior portability audit; local gates require diff cleanliness, Bash
+syntax, exact nine-member archive membership, all five simulator marker
+assertions, symbol-accounting totals, and byte-identical Windows branches.
+This seat has no compiler, so simulator runtime, device linkage, and Windows
+regression for this fix remain **UNVERIFIED**.
+
+**Required coordinator verdict:** census 35/35; Windows Debug/Release green;
+simulator and unsigned-device links with no remaining undefined or duplicate
+symbols; exact nine-member archive/provenance checks; and simulator marker
+contains the unchanged B1/M13/FS/M14 lines plus exact B2
+`cominit-spine=Com_Init entered — useFastFile=0, dedicated=2, sv/cl tails fenced`.
+Any runtime abort must report its named scaffold and stays inside B2.
+
+## FF0a Slice 1 — safe Windows oracle instrument (2026-07-14, Windows seat; CI UNVERIFIED)
+
+**Attempted:** the first ratified screenshot-roadmap slice: establish a
+content-safe Windows oracle shell and synthetic evidence gate before using the
+now-available retail zones. Cross-review amendment A4 requires an explicit CI
+fixture allowlist plus an artifact glob confined to the fixture output
+directory.
+
+**Change:** added the non-shipping `bmk4-ff-oracle` CMake target. It parses the
+real unsigned IW3 `IWffu100`/version-5 prefix, inflates with the repository's
+zlib 1.1.4 sources, reads the 44-byte `XFile` and 16-byte `XAssetList`, and
+emits an address-free `bmk4.ff-oracle.v1` report. The checked-in Python
+generator constructs an empty valid container from zero-valued records; no
+opaque fixture and no game-derived bytes are stored. The schema covers all
+nine block sizes, asset total/type-count observation state, script-string
+metadata, delayed-record observation state, external-byte/reference state, and
+three deterministic FNV-1a field hashes. Runtime-only sections carry explicit
+`observed` bits: the empty fixture earns zero; a non-empty zone cannot silently
+turn “not observed yet” into a zero result.
+
+**Safety gate:** CI invokes `--fixture-allowlist-root` and proves both an input
+outside the canonical repo root and an output outside it are refused with exit
+3 before output creation. The upload action globs only
+`build-<config>/ff-oracle-out/**`. Each Windows configuration generates the
+fixture, produces two dumps, requires byte-identical SHA256 values, asserts the
+exact schema/hash lines, and uploads only those dumps and their digest.
+
+**Compiled/ran?** UNVERIFIED. This workstation has no compiler, and its Python
+launcher is unavailable in the sandbox (`python.exe`: logon session does not
+exist). Static inspection, the independently calculated zero-record FNV values,
+and diff checks are available locally; hosted Debug/Release builds and the
+fixture/refusal runtime step are required evidence.
+
+**Required coordinator verdict:** both Windows Debug and Release build all
+three existing products plus `bmk4-ff-oracle`; both FF0a steps pass; uploaded
+`ff-oracle-Debug` and `ff-oracle-Release` contain only the two identical dump
+files and SHA256 file under the allowlisted output tree; exact schema lines and
+the two refusal tests pass. Any B2 red still preempts Slice 2.
+

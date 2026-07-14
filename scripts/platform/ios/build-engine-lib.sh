@@ -14,6 +14,13 @@ cd "$ROOT"
 
 FILES=$(sed -n 's/^ *"\${SRC_DIR}\/\(.*\)".*$/src\/\1/p' scripts/ios/CMakeLists.txt)
 
+# src/buildnumber.h is generated (gitignored); the Windows build makes it via
+# the update_build_number custom target. Mirror that here so buildnumber.cpp
+# compiles. Commit count keeps the number deterministic per checkout.
+if [ ! -f src/buildnumber.h ]; then
+  bash scripts/increment_build.sh src "$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+fi
+
 build_one_sdk() {
   local sdk=$1 target=$2
   local SDKPATH; SDKPATH=$(xcrun --sdk "$sdk" --show-sdk-path)
@@ -74,7 +81,7 @@ build_one_sdk() {
   xcrun libtool -static -o "ios/libs/$sdk/libkisakpmove.a" "${pmove[@]}" 2>/dev/null
   echo "[$sdk] pmove subset (${#pmove[@]} TUs) -> ios/libs/$sdk/libkisakpmove.a"
 
-  # Phase 3 Wave 1 filesystem closure. This archive is exact and required:
+  # Phase 3 Com_Init closure. This archive is exact and required:
   # no member may be skipped, and the app links this subset in both lanes.
   local cominit=() cominit_missing=0
   local cominit_members=(
@@ -84,8 +91,10 @@ build_one_sdk() {
     src_ios_sys_ios_paths.mm.o
     src_qcommon_com_fileaccess.cpp.o
     src_qcommon_unzip.cpp.o
+    src_qcommon_common.cpp.o
     src_stringed_stringed_hooks.cpp.o
     src_stringed_stringed_ingame.cpp.o
+    src_buildnumber.cpp.o
   )
   for leaf in "${cominit_members[@]}"; do
     if [ -f "$OBJDIR/$leaf" ]; then
