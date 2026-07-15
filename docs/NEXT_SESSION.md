@@ -34,8 +34,8 @@ it whenever work pauses.
 - `docs/media/simulator-m15-headless-boot.png` is the high-contrast screenshot
   from the green attempt (SHA-256
   `0884ab8983044b37b3ea5e22237ff49cb277823b44d8f6bbec732226d3fee0cf`).
-  README labels it explicitly as an asset-free simulator proof, not a game
-  frame.
+  It is retained as asset-free simulator evidence, not used as the README hero;
+  that position is reserved for the first real engine-rendered frame.
 - M15 is SIM_RUN evidence. The unsigned device IPA is compile/link/package
   evidence only; it is not a physical-device M15 runtime claim.
 

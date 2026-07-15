@@ -11,12 +11,9 @@ engine decompilation.
 [![Windows Build](https://github.com/Braxton-Bevis/bmk4/actions/workflows/build-kisarcod-win.yaml/badge.svg)](https://github.com/Braxton-Bevis/bmk4/actions/workflows/build-kisarcod-win.yaml)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-<img src="docs/media/simulator-m15-headless-boot.png" width="300" alt="M15 headless Com_Init proof live in the iOS Simulator; not a game frame" />&nbsp;&nbsp;
-<img src="docs/media/stub-settings-controller.png" width="300" alt="Graphics settings menu, MetalFX controls, and virtual game controller" />
-
-*Left: CI-captured M15 headless engine boot, with real Com_Init, network/event/filesystem,
-script-string, dvar-command, and pmove proofs live. This is an asset-free simulator proof,
-not yet a COD4 game frame. Every claim in this repository is machine-verified.*
+*The hero frame is intentionally reserved for output from the real COD4 engine
+renderer. Swift/Metal shell smokes do not qualify; placeholder assets may be
+used for the first engine-rendered proof.*
 
 </div>
 

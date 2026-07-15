@@ -1041,7 +1041,9 @@ window.
 **Screenshot evidence:** the high-contrast simulator frame is committed as
 `docs/media/simulator-m15-headless-boot.png` (SHA-256
 `0884ab8983044b37b3ea5e22237ff49cb277823b44d8f6bbec732226d3fee0cf`). It is
-labelled as an asset-free headless proof, not a COD4 game frame. Physical-device
-M15 runtime remains unclaimed; the next critical-path risk is the synthetic
+retained as asset-free headless evidence, not used as the README hero. That
+position is reserved for a frame issued by the real COD4 engine renderer;
+placeholder assets are acceptable for its first proof. Physical-device M15
+runtime remains unclaimed; the next critical-path risk is the synthetic
 fastfile 32→64 translation kernel.
 
