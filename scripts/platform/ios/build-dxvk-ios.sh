@@ -13,8 +13,9 @@
 #   - src/wsi/ios: CAMetalLayer WSI backend — the HWND *is* a CAMetalLayer*;
 #     surfaces via VK_EXT_metal_surface; select with DXVK_WSI_DRIVER=iOS
 #   - vulkan_loader: dlsym(RTLD_DEFAULT) first → statically linked MoltenVK
-#   - Apple feature relaxations MoltenVK cannot provide (geometryShader,
-#     shaderCullDistance, robustness2 pair, VK_KHR_pipeline_library)
+#   - Apple D3D9 feature relaxations MoltenVK cannot provide (geometryShader,
+#     imageCubeArray requirement, shaderCullDistance, robustness2 pair,
+#     VK_KHR_pipeline_library)
 #
 # App-side integration requirements (see ios/project.yml + ios/Stub/D3D9Smoke.mm):
 #   - link the produced .a set + MoltenVK.xcframework's static libMoltenVK.a

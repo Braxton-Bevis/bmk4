@@ -44,25 +44,38 @@ it whenever work pauses.
   census run `29429035322`, iOS run `29429033587`, and Windows run
   `29429026387`.
 - Staging-to-main PR #6 auto-merged as protected `main` merge `0cc70dd` after
-  required PR run `29430079226` passed Debug and Release. The hard workflows
-  triggered by that main merge still need exact-SHA verification.
+  required PR run `29430079226` passed Debug and Release. Exact-main census
+  run `29431086988` passed 41/41, iOS run `29431086945` passed simulator and
+  unsigned-device jobs, and Windows run `29431087320` passed Debug/Release,
+  FF0a, and layout conformance with no substantive red step.
 - Staging renderer-plumbing commit `f780d19` passed 41/41 and built all 215
   DXVK simulator targets with the iOS WSI plus D1 patch. Its first iOS run
   `29431163115` stopped before app link because the pinned `MoltenVK-ios.tar`
   contains only the device slice. The follow-up switches only the simulator
   download to the hash-pinned `MoltenVK-all.tar`, which carries the simulator
-  xcframework slice. No simulator app runtime is claimed yet. The direct D3D9
+  xcframework slice. Follow-up `6aa7e24` built and linked the complete
+  simulator app, while its device lane and Windows Debug/Release stayed green.
+  Runtime run `29431650949` then failed closed at adapter selection: MoltenVK
+  exposed Vulkan 1.4 on the Apple simulator GPU, but DXVK rejected its missing
+  `imageCubeArray` core feature before `CreateDevice`; the app survived, M15
+  remained earned, launch exit was 0, and no KisakStub `.ips` existed. DXVK
+  v2.7.1 uses `imageCubeArray` only in its disabled D3D11 SRV path, so the next
+  bounded round makes that requirement optional on Apple while retaining it
+  whenever supported. The direct D3D9
   clear remains plumbing evidence, not an engine/game screenshot or D1 probe.
 
 ## Current next actions
 
-1. Let PR #6 auto-merge, then verify all hard `main` runs on the merge SHA,
-   including per-step iOS simulator/device outcomes and the 41/41 census.
-2. Commit and push the simulator-DXVK plumbing wave to `staging`. Give it one
-   bounded hosted attempt. It may prove CreateDevice/Clear/readback/Present,
-   but its clear frame must not be published as the requested render.
-3. Use the resulting renderer plumbing to wire a real COD4 R/RB command path
-   and a recognizable generated placeholder room. Earn a native marker from
+1. Run the D3D9-only `imageCubeArray` requirement relaxation through staging.
+   Require the unchanged CreateDevice/Clear/readback/Present marker; do not
+   promote a build-only or adapter-rejection result.
+2. Once that runtime gate is green, promote the simulator-DXVK plumbing to
+   protected `main`; the clear frame must not be published as the requested
+   render.
+3. Enable bounded simulator dead stripping with an explicit retained
+   `_vkGetInstanceProcAddr`, prove the unchanged D3D9 marker again, then wire
+   the exact real COD4 R/RB command path and a recognizable generated
+   placeholder room. Earn a native marker from
    draw counts, non-background output/readback, and successful Present before
    publishing that simulator screenshot.
 4. In parallel with renderer closure, begin slice 7 with the smallest
