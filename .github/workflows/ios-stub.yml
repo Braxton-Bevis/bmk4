@@ -76,6 +76,8 @@ jobs:
           grep -Fqx 'src_qcommon_common.cpp.o' ../proof/cominit-archive-members.txt
           grep -Fqx 'src_ios_sys_ios_events.cpp.o' ../proof/cominit-archive-members.txt
           grep -Fqx 'src_universal_dvar_cmds.cpp.o' ../proof/cominit-archive-members.txt
+          grep -Fqx 'src_script_scr_memorytree.cpp.o' ../proof/cominit-archive-members.txt
+          grep -Fqx 'src_script_scr_stringlist.cpp.o' ../proof/cominit-archive-members.txt
           xcrun nm -gU libs/iphonesimulator/libkisakcominit.a \
             | c++filt | tee ../proof/cominit-defined-symbols.txt
           grep -F 'FS_InitFilesystem()' ../proof/cominit-defined-symbols.txt
@@ -89,8 +91,18 @@ jobs:
           grep -F 'Dvar_Set_f()' ../proof/cominit-defined-symbols.txt
           grep -F 'Dvar_SetA_f()' ../proof/cominit-defined-symbols.txt
           grep -F 'Com_DvarDump(int, char const*)' ../proof/cominit-defined-symbols.txt
+          grep -F 'SL_Init()' ../proof/cominit-defined-symbols.txt
+          grep -F 'MT_Init()' ../proof/cominit-defined-symbols.txt
+          grep -F 'SL_GetString_(char const*, unsigned int, int)' ../proof/cominit-defined-symbols.txt
+          grep -F 'SL_ConvertToString(unsigned int)' ../proof/cominit-defined-symbols.txt
+          grep -F 'SL_FindString(char const*)' ../proof/cominit-defined-symbols.txt
+          grep -F 'SL_RemoveRefToString(unsigned int)' ../proof/cominit-defined-symbols.txt
+          for symbol in scrMemTreeGlob scrMemTreePub scrStringDebugGlob; do
+            grep -E " [A-Za-z] _?${symbol}$" ../proof/cominit-defined-symbols.txt
+          done
           grep -E ' [A-Za-z] _?info1$' ../proof/cominit-defined-symbols.txt
           grep -E ' [A-Za-z] _?info2$' ../proof/cominit-defined-symbols.txt
+          ! grep -E ' [A-Za-z] _?dvarCount$' ../proof/cominit-defined-symbols.txt
           grep -E ' [A-Za-z] _?(com_dedicated|com_sv_running|useFastFile|com_errorEntered)$' \
             ../proof/cominit-defined-symbols.txt
           xcrun nm -gU libs/iphonesimulator/libkisaksmoke.a \
@@ -99,6 +111,7 @@ jobs:
                         Dvar_RegisterString Dvar_SetStringFromSource Dvar_GetString; do
             grep -F "$symbol(" ../proof/smoke-defined-symbols.txt
           done
+          grep -E ' [A-Za-z] _?dvarCount$' ../proof/smoke-defined-symbols.txt
           find dd/Build/Intermediates.noindex -path '*Objects-normal/arm64/*.o' -print0 \
             | while IFS= read -r -d '' object; do
                 echo "=== $object ==="
@@ -107,11 +120,17 @@ jobs:
           grep -F 'kisak_boot_cominit_stage' ../proof/app-object-defined-symbols.txt
           grep -F 'kisak_boot_probe_after_init' ../proof/app-object-defined-symbols.txt
           grep -F 'kisak_boot_event_smoke' ../proof/app-object-defined-symbols.txt
+          grep -F 'kisak_boot_m15_closeout' ../proof/app-object-defined-symbols.txt
           ! grep -E ' [Tt] Dvar_(Init|RegisterEnum|EnumToString|RegisterString|SetStringFromSource|GetString)\(' \
             ../proof/app-object-defined-symbols.txt
           ! grep -E ' [Tt] (Sys_QueEvent|Sys_GetEvent|Dvar_AddCommands|Dvar_Set_f|Dvar_SetA_f|Com_DvarDump)\(' \
             ../proof/app-object-defined-symbols.txt
+          ! grep -E ' [Tt] (MT_Init|SL_Init|SL_GetString_|SL_ConvertToString|SL_FindString|SL_RemoveRefToString)\(' \
+            ../proof/app-object-defined-symbols.txt
+          ! grep -E ' [A-Za-z] _?(scrMemTreeGlob|scrMemTreePub|scrStringDebugGlob)$' \
+            ../proof/app-object-defined-symbols.txt
           ! grep -E ' [A-Za-z] _?info[12]$' ../proof/app-object-defined-symbols.txt
+          ! grep -E ' [A-Za-z] _?dvarCount$' ../proof/app-object-defined-symbols.txt
           ! grep -E ' [Tt] (Com_Error|Com_Printf|Com_PrintError|Com_PrintWarning|Com_DPrintf|Com_StartupVariable|Com_LogFileOpen|Com_Memset|Com_Memcpy|_copyDWord)\(' \
             ../proof/app-object-defined-symbols.txt
           ! grep -E ' [A-Za-z] _?(com_dedicated|com_sv_running|useFastFile|com_errorEntered)$' \
@@ -137,7 +156,11 @@ jobs:
           # background subshell and bound the proof window explicitly.
           (
             set +e
+            # Keep the first-launch settings panel out of the CI evidence
+            # screenshots so the native subsystem HUD remains readable. The
+            # argument-domain override does not change the app's default.
             xcrun simctl launch --console-pty "$UDID" "$APP_BUNDLE_ID" \
+              -kisak.seenSettings YES \
               2>&1 | tee proof/app-console.txt
             printf '%s\n' "${PIPESTATUS[0]}" > proof/app-launch-exit-code.txt
           ) &
