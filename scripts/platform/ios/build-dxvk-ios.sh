@@ -19,8 +19,9 @@
 #
 # App-side integration requirements (see ios/project.yml + ios/Stub/D3D9Smoke.mm):
 #   - link the produced .a set + MoltenVK.xcframework's static libMoltenVK.a
-#   - MoltenVK must be -force_load'ed AND DEAD_CODE_STRIPPING=NO (it is only
-#     reached via dlsym; the linker would otherwise drop/strip it)
+#   - MoltenVK must be -force_load'ed; device uses DEAD_CODE_STRIPPING=NO.
+#     The simulator-only bounded-link experiment instead explicitly roots
+#     _vkGetInstanceProcAddr and runtime-gates the unchanged D3D9 smoke.
 #   - setenv("DXVK_WSI_DRIVER", "iOS") before Direct3DCreate9
 #
 # Prerequisites (all obtainable without root):
@@ -139,6 +140,6 @@ nm -gU "$BUILD_DIR/src/d3d9/libdxvk_d3d9.a" | grep -E "Direct3DCreate9(Ex)?$"
 nm "$BUILD_DIR/src/wsi/libwsi.a" | grep -m1 "IosWsiDriver" >/dev/null && echo "OK: iOS WSI backend present"
 echo "OK: libdxvk_d3d9.a built for $RESULT_PLATFORM (native CAMetalLayer WSI)"
 
-# MoltenVK (the Vulkan implementation): use the static xcframework slice from
+# Device MoltenVK (the Vulkan implementation): use the static xcframework slice from
 # KhronosGroup/MoltenVK releases (MoltenVK-ios.tar -> static/MoltenVK.xcframework/
 # ios-arm64/libMoltenVK.a) — remember: force_load + DEAD_CODE_STRIPPING=NO.

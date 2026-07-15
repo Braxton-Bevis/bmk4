@@ -141,6 +141,10 @@ jobs:
           grep -F 'kisak_boot_probe_after_init' ../proof/app-object-defined-symbols.txt
           grep -F 'kisak_boot_event_smoke' ../proof/app-object-defined-symbols.txt
           grep -F 'kisak_boot_m15_closeout' ../proof/app-object-defined-symbols.txt
+          xcrun nm -gU dd/Build/Products/Debug-iphonesimulator/KisakStub.app/KisakStub \
+            | tee ../proof/simulator-app-defined-symbols.txt
+          grep -E ' [A-Za-z] _vkGetInstanceProcAddr$' \
+            ../proof/simulator-app-defined-symbols.txt
           ! grep -E ' [Tt] Dvar_(Init|RegisterEnum|EnumToString|RegisterString|SetStringFromSource|GetString)\(' \
             ../proof/app-object-defined-symbols.txt
           ! grep -E ' [Tt] (Sys_QueEvent|Sys_GetEvent|Dvar_AddCommands|Dvar_Set_f|Dvar_SetA_f|Com_DvarDump)\(' \
