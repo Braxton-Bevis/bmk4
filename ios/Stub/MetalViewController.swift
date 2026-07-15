@@ -770,6 +770,11 @@ final class MetalViewController: UIViewController {
     // MetalFX/controller/settings paths were live. Doubles as the first demonstration
     // of the Documents-directory write path that Objective 3 routes the engine through.
     private func writeFirstFrameMarker() {
+        // Subsystem callbacks may finish before CADisplayLink reaches its first
+        // drawable. They can update state, but only renderFrame may arm this
+        // evidence file after committing the first Metal present.
+        guard wroteFirstFrameMarker else { return }
+
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let marker = docs.appendingPathComponent("metal_first_frame.txt")
         let qualityName = ["low", "med", "high"][min(max(shaderQuality, 0), 2)]
