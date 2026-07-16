@@ -272,3 +272,25 @@ Evidence pulled from the green run 29524410781 artifacts:
   `render=device-only stage, not run (no DXVK simulator build)` and
   `render-detail=IW3 R/RB placeholder detail — device-only stage, not run
   (simulator)`.
+
+## Post-merge verification (origin/main K2+Oracle1 merged in)
+
+Merge SHA `1544e29` (origin/main `73ceac9` = PR #9 ff-kernel-k2, atop PR #8
+oracle1). Git auto-merged all six overlapping files with zero manual
+conflict resolutions — the union intent held: A's K2 4-arg
+`kisak_ff_kernel_smoke`, namespaced fixture-02 resources, `FFK_WalkZone`
+archive grep, K0+K1+K2 exact marker, and fixtures path trigger all coexist
+with Lane B's scene stage, render status lines, device link
+(dead-strip+root), census 52, and device-job gates.
+
+All three workflows dispatched on `1544e29`, ALL GREEN, zero fix rounds of
+the 3 budgeted: stub `29527530333` (simulator-launch-proof + device-ipa-
+unsigned both success), census `29527532067` (52/52), Windows
+`29527533804`. The post-merge simulator marker file carries BOTH proofs
+side by side:
+
+```text
+ffk=FF kernel K0+K1+K2 OK — fixture01+02 hashes match oracle, exact-size reader loads a killhouse-size zone, RawFile round trip, StringTable + script-string remap, refused 6 container + 1 stream + 1 stale + 2 scope + 1 overflow + 1 bad_count
+render=device-only stage, not run (no DXVK simulator build)
+render-detail=IW3 R/RB placeholder detail — device-only stage, not run (simulator)
+```
