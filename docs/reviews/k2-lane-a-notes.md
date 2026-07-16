@@ -132,3 +132,16 @@ mp_killhouse 76,935,387 decompressed). Adopted in this wave:
   refusals in both directions; marker extended accordingly (`exact-size
   reader loads a killhouse-size zone`, `refused 6 container ... + 1
   overflow ...`), ios-stub.yml grep updated in the same commit.
+
+## Round 3 (belt-and-braces on the P0 reader) — SERVICE-DEGRADED
+
+A third Sol round was attempted twice on commit 1e77e8f (the exact reader
++ round-2 fixes). Attempt 1 ran ~4h: its transcript shows it actively
+verifying the DeflateZone helper against the vendored zlib source before
+the API stream stalled with no verdict; attempt 2 stalled with near-zero
+progress (Codex service degradation). Per the lane protocol ("if output is
+empty, retry once"), the round is recorded as ATTEMPTED-NO-VERDICT. The
+protocol's two mandatory rounds (trace/corpus; implementation) both
+completed with full verdicts and every sustained item is fixed and
+desk-checked; dispatch proceeds on that evidence. If a later Sol pass
+finds a defect in the P0 reader, it lands as a follow-up on this branch.
