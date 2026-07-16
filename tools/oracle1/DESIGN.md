@@ -402,7 +402,11 @@ recordable "refusal" (Sol round-1 finding 19).
 - 32-bit only: the CI generator is `-A Win32`; the loader's pointer-token
   arithmetic (`(uint32_t)&block.data[…]`) requires ILP32. The CMake file
   hard-fails on a 64-bit platform.
-- engine TUs compile with default /W3 (not /WX); tool TUs with /W4 /WX.
+- warning policy: the whole target builds at the default warning level
+  without /WX — the tool TUs include engine headers (database.h, qcommon.h,
+  gfx headers) that are not /W4-clean, so a split /WX policy would gate the
+  oracle on engine-header cosmetics. (/permissive- is kept for engine
+  parity.)
 
 ## 9. CI wiring (`build-kisarcod-win.yaml`, both configs)
 
