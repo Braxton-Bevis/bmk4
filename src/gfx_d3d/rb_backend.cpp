@@ -1325,7 +1325,13 @@ void __cdecl RB_DrawTrianglesCmd(GfxRenderCommandExecState *execState)
 
     GfxCmdDrawTriangles *cmd = (GfxCmdDrawTriangles *)execState->cmd;
 
+#ifdef KISAK_IOS
+    static_assert(sizeof(GfxCmdDrawTriangles) == 24, "arm64 draw-triangles command ABI drift");
+    xyzwOffset = sizeof(GfxCmdDrawTriangles);
+#else
+    // Preserve the original 32-bit Windows command layout byte-for-byte.
     xyzwOffset = 16;
+#endif
     xyzwSize = 16 * cmd->vertexCount;
 
     normalOffset = xyzwOffset + xyzwSize;
@@ -1377,6 +1383,23 @@ void __cdecl RB_DrawTriangles_Internal(
     for (index = 0; index < indexCount; ++index)
         tess.indices[index + tess.indexCount] = LOWORD(tess.vertexCount) + indices[index];
     for (indexa = 0; indexa < vertexCount; ++indexa)
+#ifdef KISAK_IOS
+        // The recovered Win32 expressions flatten pointer-to-array inputs by
+        // indexing beyond their first subarray, which is undefined C++ and
+        // unsafe under the arm64 optimizer. Use the declared array types.
+        R_SetVertex4dWithNormal(
+            &tess.verts[indexa + tess.vertexCount],
+            xyzw[indexa][0],
+            xyzw[indexa][1],
+            xyzw[indexa][2],
+            xyzw[indexa][3],
+            normal[indexa][0],
+            normal[indexa][1],
+            normal[indexa][2],
+            st[indexa][0],
+            st[indexa][1],
+            (const uint8_t *)&color[indexa]);
+#else
         R_SetVertex4dWithNormal(
             &tess.verts[indexa + tess.vertexCount],
             (*xyzw)[4 * indexa],
@@ -1389,6 +1412,7 @@ void __cdecl RB_DrawTriangles_Internal(
             (*st)[2 * indexa],
             (*st)[2 * indexa + 1],
             (const uint8_t *)&color[indexa]);
+#endif
     tess.indexCount += indexCount;
     tess.vertexCount += vertexCount;
     RB_EndTessSurface();
@@ -2644,6 +2668,53 @@ void __cdecl RB_Draw3D()
     }
 }
 
+#ifdef KISAK_IOS
+// LP64 sweep (Lane B device wave): the recovered 32-bit register pattern
+// below writes only LODWORD(v0) of an uninitialized 64-bit local and then
+// tests/returns the full 64-bit value — on arm64 the upper half is garbage
+// and can flip the branch. Typed 32-bit locals reproduce the original x86
+// semantics; the #else branch stays byte-identical for Windows.
+int RB_AdaptiveGpuSyncFinal()
+{
+    uint32_t v0;
+    int waitedTime;
+    int startTime;
+
+    v0 = RB_IsGpuFenceFinished();
+    if (v0)
+    {
+        if (dx.gpuSyncDelay > 0x4E20)
+        {
+            v0 = 127 * ((dx.gpuSyncDelay - 20000) / 0x80);
+            dx.gpuSyncDelay = v0;
+        }
+        else
+        {
+            dx.gpuSyncDelay = 0;
+        }
+    }
+    else
+    {
+        startTime = __rdtsc();
+        while (!RB_IsGpuFenceFinished())
+        {
+            if ((__rdtsc() - startTime) < 0)
+            {
+                RB_AbandonGpuFence();
+                break;
+            }
+        }
+        v0 = __rdtsc() - startTime;
+        waitedTime = v0;
+        if ((v0 & 0x80000000) == 0)
+        {
+            v0 = LODWORD(dx.gpuSyncDelay) + v0 / 16;
+            dx.gpuSyncDelay += waitedTime / 16;
+        }
+    }
+    return v0;
+}
+#else
 int RB_AdaptiveGpuSyncFinal()
 {
     unsigned __int64 v0; // rax
@@ -2684,6 +2755,7 @@ int RB_AdaptiveGpuSyncFinal()
     }
     return v0;
 }
+#endif
 
 void __cdecl RB_CallExecuteRenderCommands()
 {
@@ -3065,4 +3137,3 @@ void __cdecl RB_RegisterBackendAssets()
 {
     backEnd.debugFont = R_RegisterFont("fonts/smalldevfont", 1);
 }
-
