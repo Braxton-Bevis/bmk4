@@ -234,10 +234,15 @@ jobs:
             "06_delayed_stream_order",
             "07_tagged_union_arm"
           )
+          # Zone basenames are recorded per-manifest; fixtures bundled flat
+          # into the iOS app use namespaced basenames (K2 regeneration —
+          # tools/zone_fixtures/README.md).
+          $validNames = @{ "02_stringtable_script_remap" = "fixture02_valid.ff" }
           $exits = @{}
           foreach ($fixture in $fixtures) {
-            Assert-PinnedFixture "$fixture/valid.ff"
-            $zone = Join-Path $root "tools\zone_fixtures\$fixture\valid.ff"
+            $validName = if ($validNames.ContainsKey($fixture)) { $validNames[$fixture] } else { "valid.ff" }
+            Assert-PinnedFixture "$fixture/$validName"
+            $zone = Join-Path $root "tools\zone_fixtures\$fixture\$validName"
             $traceA = Join-Path $outDir "$fixture-a.txt"
             $traceB = Join-Path $outDir "$fixture-b.txt"
             & $tool --fixture-allowlist-root $root --emit-names --zone-name $fixture --input $zone --output $traceA 2>$null
@@ -268,11 +273,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "oracle1 gate b (fixture 01 vs kernel model) is red" }
 
           # Gate c: fixture 02 StringTable block adjudication (runtime verdict).
-          # The as-built fixture MUST refuse via the engine assert fence:
-          # exit is pinned to exactly 4 (Sol round-2 finding 7 — a completed
-          # or Com_Error'd fixture 02 must not pass).
-          if ($exits["02_stringtable_script_remap"] -ne 4) {
-            throw "oracle1 fixture 02 exited $($exits['02_stringtable_script_remap']), expected the engine assert fence (exit 4)"
+          # HISTORY: the ORIGINAL fixture 02 was pinned to the engine assert
+          # fence (exit 4) — that pin runtime-CONFIRMED the corpus defect the
+          # K0/K1 review flagged (FIXTURE02_VERDICT.md). The K2 wave then
+          # REGENERATED the fixture from engine truth (ENGINE_TRACE_02.md;
+          # independently the same block-4 answer): the regenerated fixture
+          # must LOAD CLEAN — exit pinned to exactly 0, and gate c now pins
+          # the full predicted event spine. The runtime trace stays the
+          # arbiter: a divergence is a corpus/kernel reconciliation, never a
+          # silent expectation edit.
+          if ($exits["02_stringtable_script_remap"] -ne 0) {
+            throw "oracle1 fixture 02 exited $($exits['02_stringtable_script_remap']), expected a clean engine load (exit 0) of the K2-regenerated fixture"
           }
           $trace02 = Join-Path $outDir "02_stringtable_script_remap-a.txt"
           $verdict = python tools/oracle1/check_trace.py $trace02 --gate c
@@ -287,7 +298,7 @@ jobs:
           # engine-native nonzero exit that is not the allowlist code 3.
           $malformed = @(
             @("01_rawfile_inline", "malformed_truncated_buffer.ff"),
-            @("02_stringtable_script_remap", "malformed_bad_script_count.ff")
+            @("02_stringtable_script_remap", "fixture02_malformed_bad_script_count.ff")
           )
           foreach ($case in $malformed) {
             Assert-PinnedFixture "$($case[0])/$($case[1])"
