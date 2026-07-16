@@ -90,3 +90,30 @@ from the CI artifacts alone — Lane A's regeneration was NOT consulted
 (independence preserved for the coordinator's reconciliation). On any
 disagreement, this runtime trace is the final word (RUNTIME > static
 reading).
+
+## RECONCILED (Lane A K2 integration, 2026-07-16)
+
+The coordinator's cross-check of this verdict against Lane A's INDEPENDENT
+static trace (`tools/zone_fixtures/ENGINE_TRACE_02.md`, written before this
+document was consulted) found the two methods in full agreement: StringTable
+body in ACTIVE block 4, struct at block4+48, name at block4+64, XAnimParts
+struct in temp block 0, corrected block table `[88,0,0,0,126,0,0,0,0]`.
+
+The K2 wave regenerated fixture 02 exactly as items (i)-(iii) demand
+(commit 4bfd3b3; zone basenames namespaced to `fixture02_valid.ff` /
+`fixture02_malformed_bad_script_count.ff` for flat app bundling). This
+integration therefore FLIPS the CI pin that guarded the OLD fixture:
+
+- fixture 02 exit is now pinned to **0** (clean engine load) instead of 4;
+- `check_trace.py --gate c` now pins the full predicted event spine of the
+  REGENERATED fixture (struct/name/values placement, XAnimParts push/pop
+  discipline, the u16 `scriptstring_remap index=1` structure, both
+  `asset_link ... redirected=1` events, `zone_loaded`, and NO error);
+- the malformed twin table uses the namespaced twin filename (its
+  engine-native refusal pin, exit 4/5, is unchanged).
+
+The refusal behavior of the ORIGINAL fixture documented above remains the
+historical runtime confirmation of the corpus defect; the trace excerpt and
+run IDs stand as recorded. The runtime trace remains the arbiter for the
+regenerated fixture: if it ever contradicts the gate-c spine, that is a
+corpus/kernel reconciliation, never a silent expectation edit.
