@@ -66,6 +66,14 @@ const dvar_t *r_polygonOffsetBias = nullptr;
 const dvar_t *r_polygonOffsetScale = nullptr;
 const dvar_t *sm_polygonOffsetBias = nullptr;
 const dvar_t *sm_polygonOffsetScale = nullptr;
+// These two stay NULL deliberately (never registered by the proof): they are
+// read only by R_GenerateWorldOutdoorLookupMatrix when a shader requests the
+// outdoor-feather code matrix, which the generated pass-through material
+// never does. Reaching them null-derefs — fail closed, never a silent wrong
+// render. (CI round 2: the -dead_strip liveness kept R_DeriveCodeMatrix,
+// so the link needs the definitions even though the path is unreached.)
+const dvar_t *r_outdoorAwayBias = nullptr;
+const dvar_t *r_outdoorDownBias = nullptr;
 
 // Real owner for the logging functions below:
 // src/gfx_d3d/rb_logfile.cpp.  Logging is disabled by r_logFile; reaching any
