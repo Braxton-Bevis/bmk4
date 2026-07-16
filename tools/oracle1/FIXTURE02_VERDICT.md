@@ -52,8 +52,9 @@ ev=alloc block=4 align=3 offset=48          <- StringTable struct, ACTIVE block 
 ev=fill block=4 offset=48 size=16 src=file
 ev=inc block=4 offset=48 size=16
 ev=alloc block=4 align=0 offset=64          <- name bytes, still block 4
-ev=inc block=4 offset=64 size=20
-ev=error kind=assert detail=...db_stream.cpp:91 ...   (exit 4)
+ev=inc block=4 offset=64 size=20            <- ATTEMPT (hook fires at entry;
+                                               the cursor never commits)
+ev=error kind=assert detail=...db_stream.cpp:91...    (exit 4)
 ```
 
 **Verdict (static tier, runtime confirmation pending).** The engine puts

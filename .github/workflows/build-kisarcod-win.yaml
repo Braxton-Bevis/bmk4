@@ -191,9 +191,30 @@ jobs:
           $outDir = Join-Path $root "build-${{ matrix.config }}\oracle1-out"
           New-Item -ItemType Directory -Force $outDir | Out-Null
 
+          # Byte-identity discipline gate: every #ifdef BMK4_ORACLE1 hook in the
+          # six instrumented engine TUs must carry an exact #line restoration.
+          python tools/oracle1/check_line_discipline.py --repo-root $root
+          if ($LASTEXITCODE -ne 0) { throw "oracle1 #line discipline check is red" }
+
+          # Content allowlist: path containment alone does not prove the input
+          # is synthetic. Pin every fixture that this gate feeds to the tool
+          # against the reviewed tools/zone_fixtures/SHA256SUMS before any run.
+          $sums = @{}
+          Get-Content (Join-Path $root "tools\zone_fixtures\SHA256SUMS") | ForEach-Object {
+            $parts = $_ -split '\s+', 2
+            if ($parts.Count -eq 2) { $sums[$parts[1].Trim()] = $parts[0].Trim() }
+          }
+          function Assert-PinnedFixture([string]$relPath) {
+            if (-not $sums.ContainsKey($relPath)) { throw "fixture $relPath is not pinned in SHA256SUMS" }
+            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $root "tools\zone_fixtures\$($relPath -replace '/', '\')")).Hash.ToLowerInvariant()
+            if ($actual -cne $sums[$relPath]) { throw "fixture $relPath content does not match its pinned SHA-256" }
+          }
+
           # Engine-refusal exits (4/5) and allowlist exits (3) are intentional;
           # relax EAP like the FF0a gate so PS 5.1 does not wrap native stderr
-          # in a terminating NativeCommandError. `throw` still enforces.
+          # in a terminating NativeCommandError. `throw` still enforces. The
+          # determinism comparison is trace bytes + exit code (stdout/stderr
+          # are diagnostics, not gated artifacts).
           $savedEap = $ErrorActionPreference
           $ErrorActionPreference = 'Continue'
 
@@ -207,6 +228,7 @@ jobs:
             "07_tagged_union_arm"
           )
           foreach ($fixture in $fixtures) {
+            Assert-PinnedFixture "$fixture/valid.ff"
             $zone = Join-Path $root "tools\zone_fixtures\$fixture\valid.ff"
             $traceA = Join-Path $outDir "$fixture-a.txt"
             $traceB = Join-Path $outDir "$fixture-b.txt"
@@ -218,6 +240,11 @@ jobs:
             $hashA = (Get-FileHash -Algorithm SHA256 $traceA).Hash.ToLowerInvariant()
             $hashB = (Get-FileHash -Algorithm SHA256 $traceB).Hash.ToLowerInvariant()
             if ($hashA -cne $hashB) { throw "oracle1 $fixture trace is not byte-deterministic: $hashA != $hashB" }
+            # Closure enforcement: every outcome must be ENGINE-native
+            # (0 = loaded, 4 = engine assert, 5 = Com_Error). A scaffold
+            # abort (6) or tool error (2/3) is a red closure gap, never a
+            # recordable "refusal".
+            if ($exitA -notin 0, 4, 5) { throw "oracle1 $fixture exited $exitA (not an engine-native outcome)" }
             $line = "BMK4_ORACLE1 fixture=$fixture exit=$exitA sha256=$hashA"
             Write-Host $line
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line
@@ -248,12 +275,21 @@ jobs:
             @("02_stringtable_script_remap", "malformed_bad_script_count.ff")
           )
           foreach ($case in $malformed) {
+            Assert-PinnedFixture "$($case[0])/$($case[1])"
             $zone = Join-Path $root "tools\zone_fixtures\$($case[0])\$($case[1])"
-            $trace = Join-Path $outDir "$($case[0])-malformed.txt"
-            & $tool --fixture-allowlist-root $root --emit-names --zone-name "$($case[0])-malformed" --input $zone --output $trace 2>$null
-            if ($LASTEXITCODE -eq 0) { throw "oracle1 accepted malformed zone $($case[1])" }
-            if ($LASTEXITCODE -eq 3) { throw "oracle1 refused malformed zone $($case[1]) via allowlist instead of the engine" }
-            $line = "BMK4_ORACLE1 malformed=$($case[1]) exit=$LASTEXITCODE (engine refusal)"
+            $traceA = Join-Path $outDir "$($case[0])-malformed-a.txt"
+            $traceB = Join-Path $outDir "$($case[0])-malformed-b.txt"
+            & $tool --fixture-allowlist-root $root --emit-names --zone-name "$($case[0])-malformed" --input $zone --output $traceA 2>$null
+            $exitA = $LASTEXITCODE
+            & $tool --fixture-allowlist-root $root --emit-names --zone-name "$($case[0])-malformed" --input $zone --output $traceB 2>$null
+            $exitB = $LASTEXITCODE
+            if ($exitA -ne $exitB) { throw "oracle1 malformed $($case[1]) exit codes differ: $exitA vs $exitB" }
+            $hashA = (Get-FileHash -Algorithm SHA256 $traceA).Hash.ToLowerInvariant()
+            $hashB = (Get-FileHash -Algorithm SHA256 $traceB).Hash.ToLowerInvariant()
+            if ($hashA -cne $hashB) { throw "oracle1 malformed $($case[1]) refusal trace is not deterministic" }
+            if ($exitA -eq 0) { throw "oracle1 accepted malformed zone $($case[1])" }
+            if ($exitA -notin 4, 5) { throw "oracle1 refused malformed zone $($case[1]) with exit $exitA instead of an engine-native refusal" }
+            $line = "BMK4_ORACLE1 malformed=$($case[1]) exit=$exitA (engine refusal) sha256=$hashA"
             Write-Host $line
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line
           }

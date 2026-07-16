@@ -33,7 +33,6 @@ extern uint32_t g_zoneIndex;
 extern volatile bool g_loadingZone;
 extern bool g_mayRecoverLostAssets;
 extern uint32_t g_zoneAllocType;
-extern uint8_t g_fileBuf[524288];
 
 // Scaffold utility (matches engine I_strncpyz declaration in q_shared.h).
 void I_strncpyz(char *dest, const char *src, int destsize);
@@ -226,8 +225,26 @@ int main(const int argc, char **argv)
     g_loadingAssets = 1;                                    // DB_LoadXZone counterpart (:2296)
     DB_ResetZoneSize(0);                                    // :2712
 
+    // Compressed-read ring: the engine passes the static g_fileBuf
+    // (db_registry.cpp:2715), which is only 4-byte-guaranteed; the file is
+    // opened FILE_FLAG_NO_BUFFERING, whose reads want sector alignment.
+    // DOCUMENTED DIVERGENCE (Sol round-1 findings 4/16): the driver passes
+    // a VirtualAlloc'd 0x80000 ring instead — page-aligned (sector-safe)
+    // and OS-zeroed, which also keeps the over-credited zlib tail
+    // deterministic on every process-fresh run. Buffer identity carries no
+    // loader semantics; DB_LoadXFile only requires the 0x80000 size
+    // contract and 4-byte alignment (db_file_load.cpp:349,364).
+    uint8_t *fileBuf = static_cast<uint8_t *>(
+        VirtualAlloc(nullptr, 0x80000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    if (!fileBuf)
+    {
+        std::fprintf(stderr, "bmk4-oracle1: VirtualAlloc failed for the read ring\n");
+        bmk4or1::TraceClose();
+        return 2;
+    }
+
     // The REAL load (db_registry.cpp:2715-2716).
-    DB_LoadXFile(inputPath.c_str(), zoneFile, zone->name, &zone->mem, 0, g_fileBuf, 0);
+    DB_LoadXFile(inputPath.c_str(), zoneFile, zone->name, &zone->mem, 0, fileBuf, 0);
     DB_LoadXFileInternal();
 
     g_loadingZone = 0;                                      // :2720

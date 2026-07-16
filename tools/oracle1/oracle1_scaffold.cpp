@@ -67,7 +67,7 @@
     std::fprintf(stderr, "bmk4-oracle1: scaffold reached out-of-scope engine dependency: %s\n", symbol);
     Bmk4Or1_Error("scaffold", symbol);
     bmk4or1::TraceClose();
-    std::exit(7);
+    std::exit(6);
 }
 
 #define OR1_UNREACHED(symbol) Bmk4Or1ScaffoldAbort(symbol)
@@ -76,19 +76,31 @@
 // Refusal channels: the engine's own failure paths, reported then exited.
 // These are FUNCTIONAL in the sense that they never return, exactly as the
 // loader expects (the engine's handlers dialog/longjmp/abort).
+//
+// SANITIZATION (Sol round-1 finding 8): engine error text interpolates
+// asset/zone names through %s arguments. Without --emit-names, only the
+// engine-source-literal parts (file:line, unformatted fmt string, error
+// code) reach the trace and stderr; the formatted message is emitted only
+// for --emit-names (synthetic fixture) runs.
 // ---------------------------------------------------------------------------
 
 void MyAssertHandler(const char *filename, int line, int type, const char *fmt, ...)
 {
     (void)type;
-    char message[1024];
-    std::va_list args;
-    va_start(args, fmt);
-    std::vsnprintf(message, sizeof(message), fmt, args);
-    va_end(args);
-
     char detail[1280];
-    std::snprintf(detail, sizeof(detail), "%s:%d %s", filename, line, message);
+    if (bmk4or1::TraceEmitNames())
+    {
+        char message[1024];
+        std::va_list args;
+        va_start(args, fmt);
+        std::vsnprintf(message, sizeof(message), fmt, args);
+        va_end(args);
+        std::snprintf(detail, sizeof(detail), "%s:%d %s", filename, line, message);
+    }
+    else
+    {
+        std::snprintf(detail, sizeof(detail), "%s:%d fmt=%s", filename, line, fmt);
+    }
     std::fprintf(stderr, "bmk4-oracle1: engine assert: %s\n", detail);
     Bmk4Or1_Error("assert", detail);
     bmk4or1::TraceClose();
@@ -97,14 +109,20 @@ void MyAssertHandler(const char *filename, int line, int type, const char *fmt, 
 
 void QDECL Com_Error(errorParm_t code, const char *fmt, ...)
 {
-    char message[1024];
-    std::va_list args;
-    va_start(args, fmt);
-    std::vsnprintf(message, sizeof(message), fmt, args);
-    va_end(args);
-
     char detail[1152];
-    std::snprintf(detail, sizeof(detail), "code=%d %s", static_cast<int>(code), message);
+    if (bmk4or1::TraceEmitNames())
+    {
+        char message[1024];
+        std::va_list args;
+        va_start(args, fmt);
+        std::vsnprintf(message, sizeof(message), fmt, args);
+        va_end(args);
+        std::snprintf(detail, sizeof(detail), "code=%d %s", static_cast<int>(code), message);
+    }
+    else
+    {
+        std::snprintf(detail, sizeof(detail), "code=%d fmt=%s", static_cast<int>(code), fmt);
+    }
     std::fprintf(stderr, "bmk4-oracle1: engine Com_Error: %s\n", detail);
     Bmk4Or1_Error("com_error", detail);
     bmk4or1::TraceClose();
@@ -120,24 +138,37 @@ void __cdecl Com_ErrorAbort()
 
 void Sys_Error(const char *error, ...)
 {
-    char message[1024];
-    std::va_list args;
-    va_start(args, error);
-    std::vsnprintf(message, sizeof(message), error, args);
-    va_end(args);
-    std::fprintf(stderr, "bmk4-oracle1: engine Sys_Error: %s\n", message);
-    Bmk4Or1_Error("com_error", message);
+    // Same sanitization policy as Com_Error: literal fmt only by default.
+    if (bmk4or1::TraceEmitNames())
+    {
+        char message[1024];
+        std::va_list args;
+        va_start(args, error);
+        std::vsnprintf(message, sizeof(message), error, args);
+        va_end(args);
+        std::fprintf(stderr, "bmk4-oracle1: engine Sys_Error: %s\n", message);
+        Bmk4Or1_Error("com_error", message);
+    }
+    else
+    {
+        std::fprintf(stderr, "bmk4-oracle1: engine Sys_Error (fmt): %s\n", error);
+        Bmk4Or1_Error("com_error", error);
+    }
     bmk4or1::TraceClose();
     std::exit(5);
 }
 
 // ---------------------------------------------------------------------------
-// Console output: formatting only, never enters the trace stream.
+// Console output. Engine print text interpolates asset/zone names (Sol
+// round-1 finding 9), so this channel is SUPPRESSED unless --emit-names:
+// on a default (real-zone-capable) run the engine prints nothing at all.
 // ---------------------------------------------------------------------------
 
 void QDECL Com_Printf(int channel, const char *fmt, ...)
 {
     (void)channel;
+    if (!bmk4or1::TraceEmitNames())
+        return;
     std::va_list args;
     va_start(args, fmt);
     std::vfprintf(stdout, fmt, args);
@@ -147,6 +178,8 @@ void QDECL Com_Printf(int channel, const char *fmt, ...)
 void Com_PrintWarning(int channel, const char *fmt, ...)
 {
     (void)channel;
+    if (!bmk4or1::TraceEmitNames())
+        return;
     std::va_list args;
     va_start(args, fmt);
     std::vfprintf(stdout, fmt, args);
@@ -156,6 +189,8 @@ void Com_PrintWarning(int channel, const char *fmt, ...)
 void Com_PrintError(int channel, const char *fmt, ...)
 {
     (void)channel;
+    if (!bmk4or1::TraceEmitNames())
+        return;
     std::va_list args;
     va_start(args, fmt);
     std::vfprintf(stderr, fmt, args);
@@ -358,7 +393,8 @@ void SL_TransferSystem(uint32_t, uint32_t) {}
 // ---------------------------------------------------------------------------
 
 void track_static_alloc_internal(void *, int, const char *, int) {}
-void __cdecl KISAK_NULLSUB() {}
+// KISAK_NULLSUB is inline-defined in qcommon/qcommon.h:1557 — no scaffold
+// definition (Sol round-1 finding 2: defining it here is a redefinition).
 void __cdecl ProfLoad_Begin(const char *) {}
 void __cdecl ProfLoad_End() {}
 void __cdecl Profile_Guard(int) {}
@@ -404,6 +440,7 @@ const dvar_t *loc_warningsAsErrors;
 
 // IsFastFileLoad() is an inline in q_shared.h reading useFastFile; the
 // oracle IS the fastfile load path, so the dvar reads enabled=true.
+// (Also Sol round-1 finding 1.)
 static dvar_s s_useFastFileDvar = []
 {
     dvar_s d{};
@@ -411,6 +448,14 @@ static dvar_s s_useFastFileDvar = []
     return d;
 }();
 const dvar_t *useFastFile = &s_useFastFileDvar;
+
+// Remaining data globals referenced by db_registry.cpp paths the driver
+// never takes but the Debug (/OPT:NOREF) link must resolve (Sol round-1
+// finding 2): DB_LogMissingAsset (:1323), DB_TryLoadXFile (:2565-2576).
+int com_missingAssetOpenFailed;
+const dvar_t *com_sv_running;
+int fs_numServerReferencedFFs;
+const char *fs_serverReferencedFFNames[32];
 
 const char *__cdecl Com_GetExtensionSubString(const char *) { OR1_UNREACHED("Com_GetExtensionSubString"); }
 void __cdecl Com_SyncThreads() { OR1_UNREACHED("Com_SyncThreads"); }

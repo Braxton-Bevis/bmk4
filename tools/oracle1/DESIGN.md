@@ -27,15 +27,15 @@ targets do (`scripts/common_files.cmake`):
 
 | TU | Role in the load | Link-time externals (beyond the database module / CRT / Win32) |
 |---|---|---|
-| `db_load.cpp` | All `Load_*` walkers, dispatch (`Load_XAsset(Header)`), all `AllocLoad_*` | `MyAssertHandler`, `SND_SetData`, `Com_GetServerDObj`, `Com_GetClientDObj`, `DObjArchive`, `DObjUnarchive` |
-| `db_stream.cpp` | Block cursors: `DB_InitStreams/Push/Pop/SetStreamIndex/AllocStreamPos/IncStreamPos/InsertPointer` | none |
+| `db_load.cpp` | All `Load_*` walkers, dispatch (`Load_XAsset(Header)`), all `AllocLoad_*` | `MyAssertHandler`, `SND_SetData`, `Com_GetServerDObj`, `Com_GetClientDObj`, `DObjArchive`, `DObjUnarchive`, gfx loader tails (`Load_Texture`, `Load_VertexBuffer`, `Load_BuildVertexDecl`, `Load_CreateMaterialPixel/VertexShader`, `Load_PicmipWater`) |
+| `db_stream.cpp` | Block cursors: `DB_InitStreams/Push/Pop/SetStreamIndex/AllocStreamPos/IncStreamPos/InsertPointer` | `MyAssertHandler` (via iassert/vassert expansion) |
 | `db_stream_load.cpp` | `Load_Stream`, `Load_DelayStream`, `DB_ConvertOffsetToPointer/Alias`, `Load_XStringCustom`, `Load_TempStringCustom` | `MyAssertHandler`, `SL_GetString` |
 | `db_stringtable_load.cpp` | `Load_ScriptStringCustom` (index remap), `Mark_ScriptStringCustom` | `SL_AddUser` |
 | `db_file_load.cpp` | `DB_LoadXFile(Internal)`, staged overlapped reads, inflate pump, `Load_XAssetListCustom`, `Load_XAssetArrayCustom` | `Com_Error`, `Com_Printf`, `va`, `I_stricmp`, `Sys_WaitDatabaseThread`, `R_DelayLoadImage`, `R_FinishStaticVertexBuffer/IndexBuffer`, `KISAK_NULLSUB`, Win32 (`ReadFileEx`, `SleepEx`, …) |
 | `db_memory.cpp` | `DB_AllocXZoneMemory`, `DB_MemAlloc` | `Com_Error`, `PMem_Alloc`, `PMem_GetOverAllocatedSize`, `R_*StaticVertexBuffer/IndexBuffer` family |
-| `db_auth.cpp` | `DB_AuthLoad_Inflate*` (zlib lane) | zlib only (`inflateInit_`, `inflate`, `inflateEnd`) |
+| `db_auth.cpp` | `DB_AuthLoad_Inflate*` (zlib lane) | zlib (`inflateInit_`, `inflate`, `inflateEnd`) + `MyAssertHandler` (iassert) |
 | `db_assetnames.cpp` | `DB_GetXAssetName`, per-type name get/set, type sizes | `MyAssertHandler`, `va` |
-| `db_registry.cpp` | `DB_AddXAsset`, `DB_LinkXAssetEntry`, `DB_AllocXAssetEntry`, pools, hash table, `Load_*Asset` for every type | large: `Sys_*` thread/database family, `SL_ConvertToString/GetString/ShutdownSystem/TransferSystem`, `PMem_*`, `FS_*`, `Cmd_*`, `Dvar_RegisterString`, `Com_*` print/error/sync, `NET_Sleep`, `R_*`/`RB_*`/`Material_*` render family, `CG_VisionSetMyChanges`, `BG_FillInAllWeaponItems`, `CM_Unload`, `Image_IsProg`, `IsFastFileLoad`, `IsUsingMods`, `Win_GetLanguage`, `Z_Free`, `track_static_alloc_internal`, `ProfLoad_*`/`Profile_*`, string utils (`I_*`), data globals `cm`, `comWorld`, `gameWorldMp`, `fs_gameDirVar`, `loc_warnings*`, `DB_AllocMaterial`, `DB_FreeMaterial` |
+| `db_registry.cpp` | `DB_AddXAsset`, `DB_LinkXAssetEntry`, `DB_AllocXAssetEntry`, pools, hash table, `Load_*Asset` for every type, `DB_AllocMaterial`/`DB_FreeMaterial` (defined HERE, not external) | large: `Sys_*` thread/database family, `SL_ConvertToString/GetString/ShutdownSystem/TransferSystem`, `PMem_*`, `FS_*`, `Cmd_*`, `Dvar_RegisterString`, `Com_*` print/error/sync, `NET_Sleep`, `R_*`/`RB_*`/`Material_*` render family, `CG_VisionSetMyChanges`, `BG_FillInAllWeaponItems`, `CM_Unload`, `Image_IsProg`, `Win_GetLanguage`, `Z_Free`, `Hunk_AddAsset`, `track_static_alloc_internal`, `ProfLoad_*`/`Profile_*`, string utils (`I_*`), `DB_LoadSounds`/`DB_SaveSounds`; data globals `cm`, `comWorld`, `gameWorldMp`, `fs_gameDirVar`, `loc_warnings*`, `useFastFile` (via inline `IsFastFileLoad`, REACHED on every successful load), `com_missingAssetOpenFailed`, `com_sv_running`, `fs_numServerReferencedFFs`, `fs_serverReferencedFFNames`. `KISAK_NULLSUB` is inline in qcommon.h — NOT scaffolded. The census is grep-derived and CI-proven: the Debug `/OPT:NOREF` link fails loudly on any miss. |
 
 Nothing inside these TUs is reimplemented, wrapped-out, or forked. The
 functions the K-series kernel needs qualified — `Load_Stream`,
@@ -86,9 +86,10 @@ listed with its contract and why the trace stays honest:
 
 | Symbol(s) | Tool-owned behavior | Honesty argument |
 |---|---|---|
-| `MyAssertHandler` | emit `ev=error kind=assert` + flush + `exit 4` | This is the engine's own refusal firing; the tool only reports it. Never returns, matching engine expectation. |
-| `Com_Error`, `Com_ErrorAbort` | emit `ev=error kind=com_error` + flush + `exit 5` | Same; ERR_DROP never returns into the loader. |
-| `Com_Printf/PrintWarning/PrintError`, `va`, `Com_sprintf` | stdout / `vsnprintf` | Formatting only; never enters the trace stream except as the engine-emitted text of an error event. |
+| `MyAssertHandler` | emit `ev=error kind=assert` (file:line + unformatted fmt by default; formatted only under `--emit-names`) + flush + `exit 4` | This is the engine's own refusal firing; the tool only reports it. Never returns, matching engine expectation. Default output carries only engine-source literals — no `%s`-interpolated asset names. |
+| `Com_Error`, `Com_ErrorAbort`, `Sys_Error` | emit `ev=error kind=com_error` (code + unformatted fmt by default) + flush + `exit 5` | Same; ERR_DROP never returns into the loader. |
+| `Com_Printf/PrintWarning/PrintError`, `va`, `Com_sprintf` | suppressed unless `--emit-names`; then stdout/stderr passthrough | Engine print text interpolates asset/zone names — an unsanitized CI-log channel if left open (Sol round-1 finding 9). Never enters the trace stream. |
+| driver read ring | VirtualAlloc'd 0x80000 buffer passed to `DB_LoadXFile` instead of `g_fileBuf` | Sector-aligned for the engine's own `FILE_FLAG_NO_BUFFERING` open flags (a static byte array carries no such guarantee in this exe) and OS-zeroed for determinism. Buffer identity has no loader semantics — only the 0x80000 ring size and 4-byte alignment are contracted. |
 | `PMem_Alloc`, `PMem_GetOverAllocatedSize`, `PMem_Begin/EndAlloc`, `PMem_Free`, `Z_Free` | 4096-aligned VirtualAlloc arena, **plus 64 KiB guard slack per block** | The engine's own `DB_IncStreamPos` fence (`db_stream.cpp:91`) stays the *observable* failure on an over-model walk instead of a heap AV that would truncate the trace. Block *sizes* given to `DB_AllocXZoneMemory` are the zone's own declared sizes — the fence itself is untouched engine code. |
 | `Sys_IsMainThread/IsDatabaseThread/IsRenderThread` | `true/false/false` | Tool is single-threaded; the database thread is never spawned, so main-thread identity is the truthful answer. |
 | `Sys_LockWrite/UnlockWrite`, `Sys_Enter/LeaveCriticalSection`, `Sys_WaitDatabaseThread`, `NET_Sleep`, remaining `Sys_*Database*` | uncontended single-thread implementations over the real `FastCriticalSection` fields / no-ops | Single-threaded execution is a *documented divergence* from the engine's worker/database threading. Consequence for evidence: event *order* is the deterministic single-thread walk order (which is also the order the engine's loader logic imposes on the byte stream — the walk itself is sequential even in the engine; only I/O staging overlaps). |
@@ -130,7 +131,7 @@ Where a boundary IS tool-owned (the scaffold: `SL_GetString`,
 scaffold, per the "prefer tool-owned wrappers" rule. The remaining hooks
 are `#ifdef BMK4_ORACLE1` blocks inside six engine files.
 
-### 3.2 The `#line` byte-identity discipline
+### 3.2 The `#line` byte-identity discipline — precise claim
 
 `BMK4_ORACLE1` is defined ONLY for the `bmk4-oracle1` target — never for
 KisakCOD-sp/mp/dedi. Preprocessor-inert guards keep shipping *code*
@@ -148,8 +149,26 @@ directive restoring the original numbering of the next source line:
 
 `#line` participates in both branches, so `__LINE__` (and therefore every
 assert string) is identical whether or not the guard is active. `__FILE__`
-is untouched. Shipping-target translation units preprocess to the same
-token stream as before the edit.
+is untouched; the six TUs use no `__COUNTER__` and no PCH.
+
+**Scope of the claim (Sol round-1 findings 6/7).** What is preserved is
+the shipping preprocessor's TOKEN STREAM and logical source locations —
+i.e. the generated code and every embedded string literal. It is NOT a
+whole-PE/PDB byte-identity claim: `/Zi` debug info embeds source-file
+checksums and PDB identity, so PDB bytes (and the PE debug directory)
+legitimately change; shipping binaries were never bit-reproducible anyway
+(`update_build_number` rewrites buildnumber.h each build and
+buildnumber.cpp embeds `__DATE__`/`__TIME__`). The invariant the project
+rule protects — shipping code and behavior unchanged — is exactly the
+token-stream invariant.
+
+**Mechanized, not manual (finding 7).** The discipline is enforced by
+`tools/oracle1/check_line_discipline.py`, which reconstructs the shipping
+view (guards + `#line` stripped) and verifies every `#line N` equals the
+next shipping-view line number — no pre-edit baseline needed, so it runs
+inside the CI gate on every build; a stale restoration after a future edit
+is a red step, not a silent drift. At desk it additionally byte-compares
+the shipping view against the pre-edit git baseline (`--baseline-rev`).
 
 ### 3.3 Hook inventory (all guarded, all one-liners into `bmk4_oracle1_instr.h`)
 
@@ -189,15 +208,18 @@ type, decimal offsets/sizes, `0x`-prefixed lowercase hex tokens, bare
 16-digit lowercase hex FNV-1a64 values. Events:
 
 ```
-zone_open        name=<basename> bytes=<n>
+zone_open        name=<zonename> bytes=<n>
 container        magic=IWffu100 version=5
 xfile            size=N external=N b0=N .. b8=N
 assetlist        strings=N strings_token=0x… assets=N assets_token=0x…
 inflate          size=N dest=blockB+O | dest=external
-stream_push      index=B depth=D
-stream_pop       index=B depth=D
-alloc            block=B align=A offset=O
-inc              block=B offset=O size=N
+stream_push      index=B depth=D          (depth before push)
+stream_pop       index=B depth=D          (restored index, depth after pop)
+alloc            block=B align=A offset=O (offset after alignment)
+inc              block=B offset=O size=N  (an ATTEMPT: recorded at entry,
+                                           before the engine's block fence;
+                                           committed unless followed by
+                                           ev=error)
 fill             block=B offset=O size=N src=file|zerofill|delay_queue
 ptr_offset       token=0x… block=B offset=O
 ptr_alias        token=0x… block=B offset=O
@@ -205,22 +227,48 @@ alias_insert     block=4 offset=O
 asset_dispatch   index=I type=T name=<typename>
 sl_intern        handle=H hash=<fnv64 of bytes incl NUL> [text=<str>]
 scriptstring_remap index=I handle=H
-asset_insert     type=T typename=<name> namehash=<fnv64 incl NUL> outcome=new|existing|override [name=<str>]
-delay_drain      index=I size=N block=B offset=O
-zone_loaded      name=<basename>
-error            kind=assert|com_error|scaffold detail=<text>
+asset_insert     type=T typename=<name> namehash=<fnv64 incl NUL> redirected=0|1 [name=<str>]
+zone_loaded      name=<zonename>
+error            kind=assert|com_error|scaffold detail=<escaped text>
 ```
+
+Notes. (1) `-1` inline tokens have no dedicated event: an inline pointer
+is an `alloc`(+`fill`/`inc`) with no `ptr_offset`/`ptr_alias`/
+`alias_insert`. (2) Delayed drains appear as `inflate dest=block2/3+O`
+events after the walk (issued by `Load_DelayStream` through the real
+`DB_LoadXFileData`); queueing appears as `fill … src=delay_queue`.
+(3) `asset_insert redirected=1` records an engine truth: a fresh
+`DB_LinkXAssetEntry` insert CLONES the struct into the per-type pool
+(db_registry.cpp DB_AllocXAssetEntry + DB_CloneXAssetInternal) and
+`Load_*Asset` writes the POOL pointer back over the asset-array cell — the
+linked header normally does not equal the zone-block pointer. A post-link
+hook cannot distinguish new/existing/override robustly (Sol round-1
+finding 17), so the trace records the observable redirect, not a guessed
+outcome. (4) `sl_intern` handles are tool-defined (first-use order,
+1-based); the engine-real fact is the remap structure, never the handle
+values. (5) `inflate` destinations beyond a block's declared size resolve
+as `external` (containment is checked against declared size).
+
+Escaping contract: `name=`, `text=`, `detail=` and the `zone_open`/
+`zone_loaded` names are percent-encoded — every byte outside
+`[0-9A-Za-z_./:-]` becomes `%XX` — so arbitrary engine bytes can neither
+split records nor inject events (Sol round-1 finding 10).
 
 String hashing convention: FNV-1a64 over the UTF-8 bytes INCLUDING the
 terminating NUL — the same `utf8_nul` convention as the fixture manifests
 (`tools/zone_fixtures/README.md` §Manifest hashing), so gate checks are
 direct equality against manifest fields.
 
-Sanitization: `text=`/`name=` payloads appear ONLY when `--emit-names` is
-passed. CI fixture runs pass it (synthetic labels only, per the fixture
-charter); the flag defaults OFF so a local real-zone run leaks only hashes.
-The `zone_open` name is the input file's basename (CI: fixture names;
-local: zone name, which also appears in every retail filename — accepted).
+Sanitization (Sol round-1 findings 8/9/12). The promise is "no plaintext
+payload fields by default" — hashes are pseudonyms (correlatable against
+known-name dictionaries), not confidentiality. Without `--emit-names`:
+`text=`/`name=` fields are omitted; engine error text is reduced to its
+engine-source LITERAL parts (assert file:line + unformatted fmt string /
+Com_Error code + unformatted fmt) so `%s`-interpolated asset names never
+reach the trace or stderr; and the `Com_Printf/PrintWarning/PrintError`
+scaffold channel is fully suppressed. CI fixture runs pass `--emit-names`
+(synthetic labels only, per the fixture charter). The `zone_open` name is
+the caller-chosen `--zone-name` (CI: fixture ids).
 
 ## 5. Determinism argument (gate a)
 
@@ -237,13 +285,22 @@ Sources of nondeterminism examined:
   chains affect only lookup, and insertion outcomes are order-determined.
 - **Time/size** — `g_trackLoadProgress=0` path skips `GetFileSize`
   accounting; no timestamps in the trace.
-- **Buffers** — `g_fileBuf` and zone blocks are process-fresh each run
-  (one process per trace); stale-bytes reads (e.g. `avail_in` over-credit
-  at EOF) read zeroed memory identically each run.
+- **Buffers** — the driver's read ring and the zone blocks are
+  VirtualAlloc'd, so process-fresh and OS-zeroed on every run; the
+  `avail_in` over-credit at EOF (`DB_WaitXFileStage` credits a fixed
+  0x40000 regardless of bytes transferred) therefore reads zeroes
+  identically each run. CAVEAT (Sol round-1 finding 16): this argument is
+  per-process-fresh runs of zones smaller than the 512 KiB ring; after a
+  ring wrap the stale tail is earlier compressed data, not zeroes — still
+  identical across two fresh processes reading the same file, but the
+  zero-tail wording applies only to sub-ring zones like the fixtures.
+  `SleepEx`'s return value is ignored by the engine; the tool queues no
+  user APCs, so no premature wake source exists in-process.
 
-CI enforces the gate mechanically: every fixture is loaded twice in
-separate processes; SHA-256 of the two traces AND the two exit codes must
-match, including for refusal traces.
+CI enforces the gate mechanically: every fixture — including malformed
+refusal twins — is loaded twice in separate processes; SHA-256 of the two
+traces AND the two exit codes must match. stdout/stderr are diagnostics
+and not part of the determinism comparison.
 
 ## 6. Qualification gates (gate b, gate c)
 
@@ -264,8 +321,8 @@ contains, in order (kernel claims ↔ engine events):
 5. buffer truthiness: `alloc block=4 align=0 offset=33` + `fill block=4
    offset=33 size=6 src=file` — buffer loaded because the stored token was
    nonzero (db_load.cpp:5649–5653), `len+1` bytes.
-6. `asset_insert type=31 namehash=fc7845dd3a44c753` (manifest
-   `rawfile[0].name` `utf8_nul` hash).
+6. `asset_insert type=31 namehash=fc7845dd3a44c753 redirected=1` (manifest
+   `rawfile[0].name` `utf8_nul` hash; pool-clone redirect per §4 note 3).
 7. exit code 0 and `zone_loaded`.
 
 **Gate c — fixture 02 StringTable block adjudication.** The dispute: the
@@ -282,15 +339,29 @@ name bytes. The verdict is recorded in
 the struct-placement events or contradicts the recorded verdict.
 
 Desk-computed prediction (to be confirmed/refuted by the first CI run,
-recorded either way): block-4 cursor walk = script-string region 0–31,
-asset array 32–47, StringTable struct 48–63, name alloc at 64; the name's
-20-byte `inc` trips the engine's own fence `g_streamPos + size <=
-block.data + block.size` (64+20 > 72 declared) → `ev=error kind=assert`
-and exit 4. That partial trace IS the adjudication: the engine put the
+recorded either way; independently recomputed and confirmed by the Sol
+pair, round-1 finding 13): block-4 cursor walk = script-string bytes
+[0,31), asset array (aligned) [32,48), StringTable struct [48,64), name
+alloc at 64; the name's 20-byte `inc` ATTEMPT (recorded at hook entry —
+the cursor never commits) trips the engine's own fence `g_streamPos +
+size <= block.data + block.size` (64+20 > 72 declared) → `ev=error
+kind=assert` and exit 4. The name path goes through `Load_XStringCustom`,
+so there is no 20-byte `fill` — the evidence events are `alloc block=4
+offset=64`, per-byte `inflate` events, the attempted `inc … size=20`, and
+the assert. That partial trace IS the adjudication: the engine put the
 StringTable body in block 4 until its fixture-declared block-4 budget ran
-out, and block 0 never received a StringTable byte. Fixture 02 as built
+out, and block 0 never received a StringTable byte (values, insertion,
+and the XAnimParts dispatch are never reached). Fixture 02 as built
 cannot complete a real-engine load; Lane A's regeneration must move the
 StringTable body accounting to block 4.
+
+Evidence label (Sol round-1 finding 5): Oracle 1 runtime claims are "real
+loader walk under Oracle assert/scaffold policy" — `RELEASE_ASSERTS`
+keeps fences observable that shipping Release compiles out, and the
+PMem scaffold's guard slack means an over-model walk reports through the
+engine fence instead of corrupting a heap that the real engine would have
+sized `size+15`. Fixture 02's 12-byte overrun sits inside even the real
+`+15`, so its verdict does not depend on the slack.
 
 **Gate can fail (doctrine rule 5):** the CI step also runs
 `01_rawfile_inline/malformed_truncated_buffer.ff` and
@@ -306,9 +377,13 @@ allowlist refusals with the FF0a `ErrorActionPreference` guard pattern.
 | 0 | zone loaded; trace complete (`zone_loaded`) |
 | 2 | usage / input-not-a-file / trace-unwritable (tool-level) |
 | 3 | fixture allowlist refusal (input or output outside root) — matches Oracle 0 |
-| 4 | engine refusal via `MyAssertHandler` (assert text in trace + stderr) |
-| 5 | engine refusal via `Com_Error` (message in trace + stderr) |
+| 4 | engine refusal via `MyAssertHandler` (sanitized per §4 by default) |
+| 5 | engine refusal via `Com_Error`/`Sys_Error` (sanitized per §4 by default) |
 | 6 | abort-loud scaffold reached (out-of-scope subsystem; symbol on stderr) |
+
+CI treats only {0, 4, 5} as engine-native outcomes for fixtures; 2/3/6 in
+a fixture run is a red gate (closure gap or harness bug), never a
+recordable "refusal" (Sol round-1 finding 19).
 
 ## 8. Build wiring
 
@@ -333,21 +408,30 @@ allowlist refusals with the FF0a `ErrorActionPreference` guard pattern.
 
 1. `Build` step: add `--target "bmk4-oracle1"`.
 2. New step `Oracle 1 engine loader gate` (id `oracle1_gate`, PowerShell,
-   FF0a step style):
+   FF0a step style). The `ErrorActionPreference` relax wraps the WHOLE
+   step (every oracle invocation can legitimately exit nonzero — Sol
+   round-1 finding 18); `throw` still enforces every assertion; the step
+   ends with the FF0a trailing `exit 0`.
+   - `check_line_discipline.py` first (mechanized §3.2 gate);
+   - content pinning: every fixture fed to the tool must match its
+     SHA-256 in the reviewed `tools/zone_fixtures/SHA256SUMS` — path
+     containment alone does not prove synthetic content (Sol round-1
+     finding 11);
    - run fixtures 01–07 `valid.ff` twice each with
      `--fixture-allowlist-root $workspace --emit-names`; assert both runs
-     byte-identical (SHA-256) with identical exit codes; record per-fixture
-     accept/refuse in the step summary;
+     byte-identical (SHA-256) with identical exit codes; assert every exit
+     is engine-native {0,4,5}; record per-fixture outcomes in the step
+     summary;
    - fixture 01 must exit 0; `check_trace.py --gate b` on its trace;
    - fixture 02: `check_trace.py --gate c` on its trace; verdict line into
      `$GITHUB_STEP_SUMMARY`;
-   - malformed 01 + malformed 02 must refuse (nonzero, ≠3);
+   - malformed 01 + malformed 02: double-run determinism too, and must
+     refuse with engine-native {4,5} (0 = accepted-malformed red; 3 =
+     wrong-channel red);
    - allowlist refusal probes (input outside root; output outside root)
-     expect exit 3, wrapped in the FF0a `ErrorActionPreference` relax +
-     trailing `exit 0` pattern.
+     expect exit 3 and no output file.
 3. Upload `oracle1-traces-<config>` artifact (traces + verdict output;
-   synthetic fixture data only — no game assets can enter CI because the
-   allowlist root confines inputs to the repo checkout).
+   synthetic fixture data only — containment + content pinning).
 4. Register the step in the staging `Verdict for coordinator` list.
 
 ## 10. Risks / expected CI surprises

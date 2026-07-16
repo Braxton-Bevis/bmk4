@@ -19,6 +19,35 @@ std::FILE *s_file;
 bool s_emitNames;
 unsigned int s_assetIndex;
 
+// Free-text field escaping contract (bmk4.oracle1.v1): bytes outside
+// [0-9A-Za-z_./:-] are percent-encoded as %XX (uppercase hex), including
+// '%', space, '=', CR/LF and any non-ASCII byte. Free-text values can be
+// arbitrary NUL-terminated engine bytes; unescaped they could split
+// records or inject fake events (Sol round-1 finding 10).
+const char *EscapeField(const char *text, char *out, std::size_t outSize)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    std::size_t o = 0;
+    for (std::size_t i = 0; text[i] && o + 4 < outSize; ++i)
+    {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const bool plain = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+            || c == '_' || c == '.' || c == '/' || c == ':' || c == '-';
+        if (plain)
+        {
+            out[o++] = static_cast<char>(c);
+        }
+        else
+        {
+            out[o++] = '%';
+            out[o++] = hex[c >> 4];
+            out[o++] = hex[c & 0xF];
+        }
+    }
+    out[o] = '\0';
+    return out;
+}
+
 // Resolve a pointer into the zone's blocks. Containment is tested against
 // the block START and declared size; a cursor that walked PAST a declared
 // size (over-model walk, e.g. fixture 02) still resolves by start pointer
@@ -98,12 +127,14 @@ std::uint64_t Fnv1a64(const void *bytes, std::size_t size)
 
 void EmitZoneOpen(const char *basename, unsigned long long fileBytes)
 {
-    TraceLine("ev=zone_open name=%s bytes=%llu", basename, fileBytes);
+    char escaped[512];
+    TraceLine("ev=zone_open name=%s bytes=%llu", EscapeField(basename, escaped, sizeof(escaped)), fileBytes);
 }
 
 void EmitZoneLoaded(const char *basename)
 {
-    TraceLine("ev=zone_loaded name=%s", basename);
+    char escaped[512];
+    TraceLine("ev=zone_loaded name=%s", EscapeField(basename, escaped, sizeof(escaped)));
 }
 } // namespace bmk4or1
 
@@ -225,22 +256,35 @@ void Bmk4Or1_AssetInsert(int type, const void *loadedData, const void *linkedAss
     const XAsset *linked = static_cast<const XAsset *>(linkedAsset);
     const char *name = DB_GetXAssetName(linked);
     const std::uint64_t hash = bmk4or1::Fnv1a64(name, std::strlen(name) + 1); // utf8_nul convention
-    const char *outcome = (linked->header.data == loadedData) ? "new" : "existing";
+    // Engine truth worth recording: DB_LinkXAssetEntry CLONES a fresh insert
+    // into the per-type pool (DB_AllocXAssetEntry + DB_CloneXAssetInternal,
+    // db_registry.cpp:1886-1889), so the header handed back — and written
+    // over the asset-array cell by Load_*Asset — normally does NOT equal the
+    // zone-block pointer. redirected=1 records that redirect happened.
+    const int redirected = (linked->header.data != loadedData) ? 1 : 0;
     const char *typeName = (type >= 0 && type < 33) ? g_assetNames[type] : "?";
     if (bmk4or1::TraceEmitNames())
-        TraceLine("ev=asset_insert type=%d typename=%s namehash=%016llx outcome=%s name=%s",
-                  type, typeName, static_cast<unsigned long long>(hash), outcome, name);
+    {
+        char escaped[512];
+        TraceLine("ev=asset_insert type=%d typename=%s namehash=%016llx redirected=%d name=%s",
+                  type, typeName, static_cast<unsigned long long>(hash), redirected,
+                  EscapeField(name, escaped, sizeof(escaped)));
+    }
     else
-        TraceLine("ev=asset_insert type=%d typename=%s namehash=%016llx outcome=%s",
-                  type, typeName, static_cast<unsigned long long>(hash), outcome);
+        TraceLine("ev=asset_insert type=%d typename=%s namehash=%016llx redirected=%d",
+                  type, typeName, static_cast<unsigned long long>(hash), redirected);
 }
 
 void Bmk4Or1_SlIntern(unsigned int handle, const char *text)
 {
     const std::uint64_t hash = bmk4or1::Fnv1a64(text, std::strlen(text) + 1);
     if (bmk4or1::TraceEmitNames())
+    {
+        char escaped[512];
         TraceLine("ev=sl_intern handle=%u hash=%016llx text=%s",
-                  handle, static_cast<unsigned long long>(hash), text);
+                  handle, static_cast<unsigned long long>(hash),
+                  EscapeField(text, escaped, sizeof(escaped)));
+    }
     else
         TraceLine("ev=sl_intern handle=%u hash=%016llx",
                   handle, static_cast<unsigned long long>(hash));
@@ -248,14 +292,7 @@ void Bmk4Or1_SlIntern(unsigned int handle, const char *text)
 
 void Bmk4Or1_Error(const char *kind, const char *detail)
 {
-    // One event per line: engine assert/error text may contain newlines.
-    char clean[1024];
-    std::size_t n = 0;
-    for (; detail[n] && n + 1 < sizeof(clean); ++n)
-    {
-        const char c = detail[n];
-        clean[n] = (c == '\n' || c == '\r' || c == '\t') ? ' ' : c;
-    }
-    clean[n] = '\0';
-    TraceLine("ev=error kind=%s detail=%s", kind, clean);
+    // Escaping keeps one event per line even for multiline engine text.
+    char escaped[1536];
+    TraceLine("ev=error kind=%s detail=%s", kind, EscapeField(detail, escaped, sizeof(escaped)));
 }

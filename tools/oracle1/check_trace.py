@@ -76,8 +76,10 @@ def gate_b(events: list[dict[str, str]], manifest: dict) -> int:
         # buffer truthiness: nonzero token -> len+1 inline bytes (db_load.cpp:5649)
         {"ev": "alloc", "block": "4", "align": "0", "offset": "33"},
         {"ev": "fill", "block": "4", "offset": "33", "size": "6", "src": "file"},
-        # real DB_LinkXAssetEntry insertion, manifest utf8_nul hash
-        {"ev": "asset_insert", "type": "31", "namehash": expected_namehash, "outcome": "new"},
+        # real DB_LinkXAssetEntry insertion, manifest utf8_nul hash; a fresh
+        # insert is pool-cloned so the linked header is redirected off-block
+        # (db_registry.cpp:1886-1889) — an engine truth the kernel must model
+        {"ev": "asset_insert", "type": "31", "namehash": expected_namehash, "redirected": "1"},
         {"ev": "zone_loaded"},
     ]
     failures = find_subsequence(events, wants)
